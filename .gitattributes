@@ -1,3 +1,15 @@
-  *.BAS text eol=crlf
-  *.TXT text eol=crlf
-  *.EXE binary
+*.BAS text eol=crlf
+*.TXT text eol=crlf
+*.EXE binary
+
+# Executable files
+*.exe export-ignore
+
+# Docs images
+docs/ export-ignore
+
+.github/ export-ignore
+
+.gitattributes export-ignore
+
+.gitignore export-ignore
