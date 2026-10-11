@@ -1,0 +1,3 @@
+  *.BAS text eol=crlf
+  *.TXT text eol=crlf
+  *.EXE binary
