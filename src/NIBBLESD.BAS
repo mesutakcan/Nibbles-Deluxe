@@ -2,7 +2,7 @@
 '                     N I B B L E S   D E L U X E
 '
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
-
+'
 '  https://github.com/mesutakcan/Nibbles-Deluxe
 '  Version 3
 '  2026-10-09
@@ -169,25 +169,6 @@ SUB AddScore (a, pts)
     END IF
 END SUB
 
-'AskYesNo:
-'  Small yes/no box, returns TRUE for Y
-FUNCTION AskYesNo (msg$)
-    w = LEN(msg$) + 8
-    IF w < 30 THEN w = 30
-    c1 = (80 - w) \ 2 + 1
-    c2 = c1 + w - 1
-    attr = pal(5) + pal(6) * 16
-    DrawBox 8, c1, 12, c2, attr
-    Center 9, msg$, attr
-    Center 11, "[Y] Yes        [N] No", attr
-    DO WHILE INKEY$ <> "": LOOP
-    DO
-        k$ = UCASE$(INKEY$)
-    LOOP UNTIL k$ = "Y" OR k$ = "N" OR k$ = CHR$(27)
-    AskYesNo = (k$ = "Y")
-    RedrawRows 7, 13
-END FUNCTION
-
 'ApplyTheme:
 '  Fills the colour table.  Entries:
 '   1 snake 1 body   2 snake 2 body   3 walls        4 background
@@ -214,10 +195,23 @@ SUB ApplyTheme
     END SELECT
 END SUB
 
-'BodyColor:
-'  Body colour of a snake segment: two shades alternate along the body
-FUNCTION BodyColor (a, idx)
-    IF idx AND 1 THEN BodyColor = pal(a) ELSE BodyColor = pal(12 + a)
+'AskYesNo:
+'  Small yes/no box, returns TRUE for Y
+FUNCTION AskYesNo (msg$)
+    w = LEN(msg$) + 8
+    IF w < 30 THEN w = 30
+    c1 = (80 - w) \ 2 + 1
+    c2 = c1 + w - 1
+    attr = pal(5) + pal(6) * 16
+    DrawBox 8, c1, 12, c2, attr
+    Center 9, msg$, attr
+    Center 11, "[Y] Yes        [N] No", attr
+    DO WHILE INKEY$ <> "": LOOP
+    DO
+        k$ = UCASE$(INKEY$)
+    LOOP UNTIL k$ = "Y" OR k$ = "N" OR k$ = CHR$(27)
+    AskYesNo = (k$ = "Y")
+    RedrawRows 7, 13
 END FUNCTION
 
 'BannerRow$:
@@ -230,6 +224,12 @@ FUNCTION BannerRow$ (i)
         CASE 4: BannerRow$ = "#  ##    #    #   #  #   #  #      #          #"
         CASE ELSE: BannerRow$ = "#   #  #####  ####   ####   #####  #####  #### "
     END SELECT
+END FUNCTION
+
+'BodyColor:
+'  Body colour of a snake segment: two shades alternate along the body
+FUNCTION BodyColor (a, idx)
+    IF idx AND 1 THEN BodyColor = pal(a) ELSE BodyColor = pal(12 + a)
 END FUNCTION
 
 'Calibrate:
@@ -1323,3 +1323,4 @@ END SUB
 SUB Wall (row, col)
     IF row >= 1 AND row <= 50 AND col >= 1 AND col <= 80 THEN arena(row, col) = pal(3)
 END SUB
+
