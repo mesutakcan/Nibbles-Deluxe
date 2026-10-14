@@ -4,31 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 2
-'  2026-10-08
-
-'  Written for QuickBASIC 4.5 (QB45); it also runs in QBasic 1.1.
-'
-'  To run:  open the file in QB45 and press F5  (or Shift+F5 in QBasic).
-'
-'  What is new
-'    - direct video memory graphics: fast, flicker free, exact colours
-'    - settings menu: players, speed, colour theme, start level, sound
-'    - three colour themes (Classic, Night, Mono)
-'    - animated title screen with a big logo
-'    - bright snake heads, snakes are visible before the round starts
-'    - turn buffer: fast key presses are never lost and a snake can no
-'      longer reverse into itself
-'    - flashing bonus diamonds, level-complete bonus
-'    - lives really count down now, game over screen with winner
-'    - high score is saved to NIBBLES.HI
-'    - game speed is calibrated, so it plays the same on any computer
-'    - two extra levels (12 in total)
-'
-'  Controls
-'    Player 1 : arrow keys (or keypad 8 2 4 6)
-'    Player 2 : W A S D    (in one player mode W A S D also work)
-'    P = pause,  ESC = quit to menu
+'  Version 3
+'  2026-10-09
 '===========================================================================
 
 DEFINT A-Z
@@ -55,6 +32,7 @@ END TYPE
 '---- Sub declarations --------------------------------------------------------
 DECLARE FUNCTION AskYesNo (msg$)
 DECLARE FUNCTION BannerRow$ (i)
+DECLARE FUNCTION BodyColor (a, idx)
 DECLARE FUNCTION GameOverScreen ()
 DECLARE FUNCTION MainMenu ()
 DECLARE FUNCTION Num7$ (v&)
@@ -93,6 +71,7 @@ DECLARE SUB SetBlink (flag)
 DECLARE SUB Sfx (n)
 DECLARE SUB SparklePause ()
 DECLARE SUB SpawnBonus ()
+DECLARE SUB SpawnMine ()
 DECLARE SUB Tick ()
 DECLARE SUB Wall (row, col)
 
@@ -102,6 +81,8 @@ CONST FALSE = 0
 CONST MAXSNAKELENGTH = 1000
 CONST STARTLEN = 5
 CONST NUMLEVELS = 12
+CONST MAXMINE = 3         'mines on the screen at the same time
+CONST MINECHAR = 15       'character used for a mine
 CONST STARTOVER = 1       'parameters of the Level SUB
 CONST SAMELEVEL = 2
 CONST NEXTLEVEL = 3
@@ -113,12 +94,14 @@ DIM SHARED arena(1 TO 50, 1 TO 80)
 DIM SHARED sammy(1 TO 2) AS snakeType
 DIM SHARED sammyBody(0 TO MAXSNAKELENGTH - 1, 1 TO 2) AS snakeBody
 DIM SHARED qd(1 TO 2, 1 TO 3), qn(1 TO 2)       'buffered turns per snake
-DIM SHARED pal(1 TO 12)                           'colour table, see ApplyTheme
+DIM SHARED pal(1 TO 15)                           'colour table, see ApplyTheme
+DIM SHARED minRow(1 TO MAXMINE), minCol(1 TO MAXMINE), minTime(1 TO MAXMINE)
+DIM SHARED hitMine(1 TO 2)
 DIM SHARED nm$(1 TO 2)
 DIM SHARED vidSeg AS LONG
 DIM SHARED highScore AS LONG
 DIM SHARED loopsPerMs AS SINGLE
-DIM SHARED curLevel, numPlayers, speedSet, speedUp, startLevel, theme, soundOn
+DIM SHARED curLevel, numPlayers, speedSet, speedUp, startLevel, theme, soundOn, minesOn
 DIM SHARED numRow, numCol, numVal, bonRow, bonCol, bonOn, bonTime
 DIM SHARED newHigh, abortGame, anyDead, levelDone, stepMs
 DIM SHARED fileFail, fileBusy
@@ -137,7 +120,7 @@ DEF SEG
 
 nm$(1) = "SAMMY": nm$(2) = "JAKE"
 numPlayers = 1: speedSet = 5: speedUp = TRUE
-startLevel = 1: theme = 1: soundOn = TRUE
+startLevel = 1: theme = 1: soundOn = TRUE: minesOn = TRUE
 ApplyTheme
 LoadHigh
 SetBlink FALSE                'allows 16 background colours
@@ -186,28 +169,6 @@ SUB AddScore (a, pts)
     END IF
 END SUB
 
-'ApplyTheme:
-'  Fills the colour table.  Entries:
-'   1 snake 1 body   2 snake 2 body   3 walls        4 background
-'   5 dialog text    6 dialog back    7 snake 1 head  8 snake 2 head
-'   9 number colour 10 bonus colour  11 status text  12 status back
-SUB ApplyTheme
-    SELECT CASE theme
-        CASE 1                                  'Classic (blue)
-            pal(1) = 14: pal(2) = 13: pal(3) = 12: pal(4) = 1
-            pal(5) = 15: pal(6) = 4: pal(7) = 15: pal(8) = 15
-            pal(9) = 15: pal(10) = 10: pal(11) = 15: pal(12) = 0
-        CASE 2                                  'Night (black)
-            pal(1) = 10: pal(2) = 11: pal(3) = 9: pal(4) = 0
-            pal(5) = 15: pal(6) = 1: pal(7) = 15: pal(8) = 15
-            pal(9) = 14: pal(10) = 13: pal(11) = 15: pal(12) = 1
-        CASE ELSE                               'Mono
-            pal(1) = 15: pal(2) = 7: pal(3) = 8: pal(4) = 0
-            pal(5) = 0: pal(6) = 7: pal(7) = 7: pal(8) = 15
-            pal(9) = 15: pal(10) = 15: pal(11) = 7: pal(12) = 0
-    END SELECT
-END SUB
-
 'AskYesNo:
 '  Small yes/no box, returns TRUE for Y
 FUNCTION AskYesNo (msg$)
@@ -225,6 +186,38 @@ FUNCTION AskYesNo (msg$)
     LOOP UNTIL k$ = "Y" OR k$ = "N" OR k$ = CHR$(27)
     AskYesNo = (k$ = "Y")
     RedrawRows 7, 13
+END FUNCTION
+
+'ApplyTheme:
+'  Fills the colour table.  Entries:
+'   1 snake 1 body   2 snake 2 body   3 walls        4 background
+'   5 dialog text    6 dialog back    7 snake 1 head  8 snake 2 head
+'   9 number colour 10 bonus colour  11 status text  12 status back
+'  13 snake 1 stripe 14 snake 2 stripe 15 mine colour
+SUB ApplyTheme
+    SELECT CASE theme
+        CASE 1                                  'Classic (blue)
+            pal(1) = 14: pal(2) = 13: pal(3) = 12: pal(4) = 1
+            pal(5) = 15: pal(6) = 4: pal(7) = 15: pal(8) = 15
+            pal(9) = 15: pal(10) = 10: pal(11) = 15: pal(12) = 0
+            pal(13) = 6: pal(14) = 5: pal(15) = 12
+        CASE 2                                  'Night (black)
+            pal(1) = 10: pal(2) = 11: pal(3) = 9: pal(4) = 0
+            pal(5) = 15: pal(6) = 1: pal(7) = 15: pal(8) = 15
+            pal(9) = 14: pal(10) = 13: pal(11) = 15: pal(12) = 1
+            pal(13) = 2: pal(14) = 3: pal(15) = 12
+        CASE ELSE                               'Mono
+            pal(1) = 15: pal(2) = 7: pal(3) = 8: pal(4) = 0
+            pal(5) = 0: pal(6) = 7: pal(7) = 7: pal(8) = 15
+            pal(9) = 15: pal(10) = 15: pal(11) = 7: pal(12) = 0
+            pal(13) = 7: pal(14) = 7: pal(15) = 15
+    END SELECT
+END SUB
+
+'BodyColor:
+'  Body colour of a snake segment: two shades alternate along the body
+FUNCTION BodyColor (a, idx)
+    IF idx AND 1 THEN BodyColor = pal(a) ELSE BodyColor = pal(12 + a)
 END FUNCTION
 
 'BannerRow$:
@@ -290,6 +283,8 @@ SUB ChangeSetting (sel, d)
             IF theme < 1 THEN theme = 3
         CASE 6
             soundOn = NOT soundOn
+        CASE 7
+            minesOn = NOT minesOn
     END SELECT
 END SUB
 
@@ -418,14 +413,17 @@ END SUB
 SUB DrawItems
     IF numRow > 0 THEN PutChar numRow, numCol, 48 + numVal, pal(9) + pal(4) * 16
     IF bonOn THEN PutChar bonRow, bonCol, 4, pal(10) + pal(4) * 16
+    FOR m = 1 TO MAXMINE
+        IF minTime(m) > 0 THEN PutChar minRow(m), minCol(m), MINECHAR, pal(15) + pal(4) * 16
+    NEXT m
 END SUB
 
 'DrawMenu:
 '  Draws the settings menu, sel is the highlighted line
 SUB DrawMenu (sel)
-    FOR i = 1 TO 8
+    FOR i = 1 TO 9
         r = 10 + i
-        IF i >= 7 THEN r = r + 1
+        IF i >= 8 THEN r = r + 1
         IF i = sel THEN attr = 0 + 7 * 16 ELSE attr = 7
         FillRect r, 19, r, 62, 32, attr
         SELECT CASE i
@@ -435,7 +433,7 @@ SUB DrawMenu (sel)
             CASE 4: lab$ = "Start level"
             CASE 5: lab$ = "Colors"
             CASE 6: lab$ = "Sound"
-            CASE 7: lab$ = ""
+            CASE 7: lab$ = "Mines"
             CASE ELSE: lab$ = ""
         END SELECT
         SELECT CASE i
@@ -455,10 +453,12 @@ SUB DrawMenu (sel)
                 END SELECT
             CASE 6
                 IF soundOn THEN v$ = "ON" ELSE v$ = "OFF"
+            CASE 7
+                IF minesOn THEN v$ = "ON" ELSE v$ = "OFF"
             CASE ELSE
                 v$ = ""
         END SELECT
-        IF i <= 6 THEN
+        IF i <= 7 THEN
             PutStr r, 22, lab$, attr
             IF i = sel THEN
                 v$ = CHR$(17) + " " + v$ + " " + CHR$(16)
@@ -466,7 +466,7 @@ SUB DrawMenu (sel)
             ELSE
                 PutStr r, 44, v$, 15
             END IF
-        ELSEIF i = 7 THEN
+        ELSEIF i = 8 THEN
             Center r, "S T A R T   G A M E", attr
         ELSE
             Center r, "Q U I T", attr
@@ -515,6 +515,11 @@ SUB FindCell (rr, cc)
             IF bonOn THEN
                 IF bonRow = rr AND bonCol = cc THEN ok = FALSE
             END IF
+            FOR m = 1 TO MAXMINE
+                IF minTime(m) > 0 THEN
+                    IF minRow(m) = rr AND minCol(m) = cc THEN ok = FALSE
+                END IF
+            NEXT m
         END IF
     LOOP UNTIL ok OR tries > 2000
 END SUB
@@ -590,8 +595,8 @@ SUB Intro
 
     Center 13, "Steer your snake around the arena and eat the numbers in order,", 7
     Center 14, "from 1 to 9.  Every number makes you longer and gives more points.", 7
-    Center 15, "Grab the flashing diamond for a big bonus, but never hit a wall,", 7
-    Center 16, "the other snake or your own tail!", 7
+    Center 15, "Grab the flashing diamond for a bonus.  Never hit a wall, the other", 7
+    Center 16, "snake, your own tail or a red mine (mines pop up from time to time)!", 7
 
     Center 18, "PLAYER 1  -  arrow keys  (or keypad 8 2 4 6)", 11
     Center 19, "PLAYER 2  -  W A S D     (W A S D also work in 1 player mode)", 13
@@ -787,7 +792,7 @@ SUB Level (what)
             sc = sammy(a).col - back * dc
             sammyBody(j, a).row = sr
             sammyBody(j, a).col = sc
-            IF j = STARTLEN - 1 THEN arena(sr, sc) = pal(6 + a) ELSE arena(sr, sc) = pal(a)
+            IF j = STARTLEN - 1 THEN arena(sr, sc) = pal(6 + a) ELSE arena(sr, sc) = BodyColor(a, j)
         NEXT j
         sammy(a).head = STARTLEN - 1
         sammy(a).count = STARTLEN
@@ -795,6 +800,9 @@ SUB Level (what)
     NEXT a
 
     numVal = 0: numRow = 0: bonOn = FALSE
+    FOR m = 1 TO MAXMINE
+        minTime(m) = 0
+    NEXT m
     RedrawRows 2, 25
 END SUB
 
@@ -821,12 +829,12 @@ END SUB
 FUNCTION MainMenu
     ClearScreen 7
     DrawBanner 2, 0, TRUE
-    DrawBox 9, 18, 21, 63, 11
+    DrawBox 9, 18, 22, 63, 11
     Center 9, " S E T T I N G S ", 14
     Center 23, "UP/DOWN select    LEFT/RIGHT change    ENTER start    ESC quit", 7
     Center 24, "High score:" + STR$(highScore), 14
 
-    sel = 7
+    sel = 8
     DO
         DrawMenu sel
         DO
@@ -835,18 +843,18 @@ FUNCTION MainMenu
         SELECT CASE k$
             CASE CHR$(0) + "H"
                 sel = sel - 1
-                IF sel < 1 THEN sel = 8
+                IF sel < 1 THEN sel = 9
             CASE CHR$(0) + "P"
                 sel = sel + 1
-                IF sel > 8 THEN sel = 1
+                IF sel > 9 THEN sel = 1
             CASE CHR$(0) + "K"
                 ChangeSetting sel, -1
             CASE CHR$(0) + "M"
                 ChangeSetting sel, 1
             CASE " "
-                IF sel <= 6 THEN ChangeSetting sel, 1
+                IF sel <= 7 THEN ChangeSetting sel, 1
             CASE CHR$(13)
-                IF sel = 8 THEN MainMenu = FALSE ELSE MainMenu = TRUE
+                IF sel = 9 THEN MainMenu = FALSE ELSE MainMenu = TRUE
                 EXIT DO
             CASE CHR$(27)
                 MainMenu = FALSE
@@ -896,6 +904,8 @@ SUB PlayNibbles
 
         numVal = 1
         bonOn = FALSE
+        hitMine(1) = FALSE
+        hitMine(2) = FALSE
         PlaceNumber
         anyDead = FALSE
         levelDone = FALSE
@@ -921,17 +931,22 @@ SUB PlayNibbles
             NEXT a
             numRow = 0
             bonOn = FALSE
+            FOR m = 1 TO MAXMINE
+                minTime(m) = 0
+            NEXT m
             RedrawRows 2, 25
             DrawHud
 
-            IF numPlayers = 1 THEN
-                msg$ = nm$(1) + " CRASHED!"
-            ELSEIF NOT sammy(1).alive AND NOT sammy(2).alive THEN
+            IF numPlayers = 2 AND NOT sammy(1).alive AND NOT sammy(2).alive THEN
                 msg$ = "BOTH SNAKES CRASHED!"
-            ELSEIF NOT sammy(1).alive THEN
-                msg$ = nm$(1) + " CRASHED!"
             ELSE
-                msg$ = nm$(2) + " CRASHED!"
+                who = 1
+                IF sammy(1).alive THEN who = 2
+                IF hitMine(who) THEN
+                    msg$ = nm$(who) + " HIT A MINE!"
+                ELSE
+                    msg$ = nm$(who) + " CRASHED!"
+                END IF
             END IF
 
             gameOver = FALSE
@@ -1098,6 +1113,7 @@ SUB Sfx (n)
         CASE 3: PLAY "MBO0L32EFGEFDC"                  'crash
         CASE 4: PLAY "MBT160O2L16CEGO3CEGO4C"          'level complete
         CASE 5: PLAY "MBT200O3L32EGB>CL16E"            'bonus
+        CASE 6: PLAY "MBT200O1L32DC"                    'mine appears
     END SELECT
 END SUB
 
@@ -1146,6 +1162,41 @@ SUB SpawnBonus
     PutChar bonRow, bonCol, 4, pal(10) + pal(4) * 16
 END SUB
 
+'SpawnMine:
+'  Puts a mine on a free spot that is not close to any snake head.  The
+'  required distance grows with the game speed (about 0.7 seconds of travel).
+SUB SpawnMine
+    slot = 0
+    FOR m = 1 TO MAXMINE
+        IF minTime(m) <= 0 AND slot = 0 THEN slot = m
+    NEXT m
+    IF slot = 0 THEN EXIT SUB
+
+    minDist = 700 \ stepMs
+    IF minDist < 6 THEN minDist = 6
+    IF minDist > 30 THEN minDist = 30
+
+    FOR attempt = 1 TO 60
+        FindCell r, c
+        okFar = (arena(r * 2 - 1, c) = pal(4)) AND (arena(r * 2, c) = pal(4))
+        FOR a = 1 TO numPlayers
+            dx = ABS(c - sammy(a).col)
+            dy = ABS(r * 2 - sammy(a).row)
+            dy2 = ABS(r * 2 - 1 - sammy(a).row)
+            IF dy2 < dy THEN dy = dy2
+            IF dx <= minDist AND dy <= minDist THEN okFar = FALSE
+        NEXT a
+        IF okFar THEN
+            minRow(slot) = r
+            minCol(slot) = c
+            minTime(slot) = 12000 \ (stepMs + 10)
+            PutChar r, c, MINECHAR, pal(15) + pal(4) * 16
+            Sfx 6
+            EXIT SUB
+        END IF
+    NEXT attempt
+END SUB
+
 'Tick:
 '  One step of the game: lifetime of the bonus, move all snakes, collisions
 SUB Tick
@@ -1160,6 +1211,19 @@ SUB Tick
             PutChar bonRow, bonCol, 4, fc + pal(4) * 16
         END IF
     END IF
+
+    'mines flash and disappear after a while
+    FOR m = 1 TO MAXMINE
+        IF minTime(m) > 0 THEN
+            minTime(m) = minTime(m) - 1
+            IF minTime(m) = 0 THEN
+                DrawCell minRow(m), minCol(m)
+            ELSEIF (minTime(m) AND 3) = 0 THEN
+                IF (minTime(m) AND 4) = 0 THEN fc = pal(15) ELSE fc = pal(9)
+                PutChar minRow(m), minCol(m), MINECHAR, fc + pal(4) * 16
+            END IF
+        END IF
+    NEXT m
 
     'phase 1: every snake takes its next buffered turn and moves its head
     FOR a = 1 TO numPlayers
@@ -1186,6 +1250,17 @@ SUB Tick
         IF numPlayers = 2 THEN
             IF sammy(1).row = sammy(2).row AND sammy(1).col = sammy(2).col THEN dead = TRUE
         END IF
+        rr = (r + 1) \ 2
+        FOR m = 1 TO MAXMINE
+            IF minTime(m) > 0 THEN
+                IF minRow(m) = rr AND minCol(m) = c THEN
+                    dead = TRUE
+                    hitMine(a) = TRUE
+                    minTime(m) = 0
+                    DrawCell minRow(m), minCol(m)
+                END IF
+            END IF
+        NEXT m
 
         IF dead THEN
             sammy(a).alive = FALSE
@@ -1193,7 +1268,7 @@ SUB Tick
         ELSE
             'old head becomes body
             hd = sammy(a).head
-            PutPixel sammyBody(hd, a).row, sammyBody(hd, a).col, pal(a)
+            PutPixel sammyBody(hd, a).row, sammyBody(hd, a).col, BodyColor(a, hd)
             'new head
             hd = (hd + 1) MOD MAXSNAKELENGTH
             sammy(a).head = hd
@@ -1224,6 +1299,9 @@ SUB Tick
                     PlaceNumber
                     IF NOT bonOn THEN
                         IF INT(RND * 3) = 0 THEN SpawnBonus
+                    END IF
+                    IF minesOn THEN
+                        IF INT(RND * 3) = 0 THEN SpawnMine
                     END IF
                 END IF
                 DrawHud

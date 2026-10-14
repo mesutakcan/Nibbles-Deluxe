@@ -23,8 +23,10 @@ always called `NIBBLESD.BAS` and the program `NIBBLESD.EXE`.
 - Three colour themes: Classic, Night, Mono
 - Animated title screen with a big logo
 - Bright snake heads; the snakes are visible before a round starts
+- Two-tone striped snake bodies
 - Turn buffer: fast key presses are never lost, and a snake can no longer reverse into itself
 - Flashing bonus diamonds and a bonus for completing a level
+- Red mines that appear during play (can be switched off)
 - Lives that really count down, game over screen with the winner
 - The high score is saved to `NIBBLES.HI`
 - The game speed is calibrated at start-up, so it plays the same on any computer
@@ -93,7 +95,10 @@ tail. If both heads meet, both snakes die.
   players the higher score wins.
 - **Speed**: gets about 7 percent faster with every level (can be switched off).
 
-If a snake crashes, the level starts again with the same walls.
+If a snake crashes, the level starts again with the same walls. Red mines may appear
+randomly after a number is eaten. There can be up to three mines on screen at once;
+each flashes and disappears after about 12 seconds. Hitting one costs a life. Mines
+are enabled by default and can be switched off in the settings.
 
 ## Levels
 
@@ -111,8 +116,11 @@ box with four gates and level 12 is a big plus sign. After level 12 the levels s
 | Start level | 1 to 12 |
 | Colors | CLASSIC, NIGHT, MONO |
 | Sound | ON / OFF |
+| Mines | ON / OFF |
 
 The players are called SAMMY and JAKE.
+
+![Nibbles Deluxe SS 3](docs/screenshot_3.png)
 
 ## Files the game creates
 
@@ -138,6 +146,11 @@ LINK NIBBLESD.OBJ,,,BCOM45.LIB;
 ## History
 
 Newest version first.
+
+### Version 3 - 2026-10-09
+
+- Added red mines that appear randomly as numbers are eaten; mines can be switched off
+- Added alternating two-tone stripes to the snake bodies
 
 ### Version 2 - 2026-10-08
 
