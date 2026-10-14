@@ -13,7 +13,8 @@ order and try to stay alive.
 
 ![Nibbles Deluxe SS 1](docs/screenshot_1.png)
 
-This repository publishes the game version by version. This is the first release.
+The game is published version by version; every version has its own release. The BASIC file is
+always called `NIBBLESD.BAS` and the program `NIBBLESD.EXE`.
 
 ## Features
 
@@ -43,8 +44,8 @@ The BASIC source is in the [`src`](src) folder.
 - A VGA colour display (DOS, or an emulator such as DOSBox)
 - To run the source: QuickBASIC 4.5 (QB45)
 
-The game was developed and tested with QuickBASIC 4.5 in DOSBox. The source should also run
-in QBasic 1.1
+The game was developed and tested with QuickBASIC 4.5 in DOSBox. The source is written to run
+in QBasic 1.1 as well.
 
 ## How to run
 
@@ -61,7 +62,7 @@ in QBasic 1.1
 
 **The source in QB45**
 
-1. Copy `src/NIBBLESD.BAS` to your QB45 folder (DOS needs a short 8.3 file name).
+1. Copy `src/NIBBLESD.BAS` to your QB45 folder.
 2. Start QB45, open the file and press **F5**, or run `QB NIBBLESD.BAS /RUN`.
 
 ## Controls
@@ -119,7 +120,8 @@ The players are called SAMMY and JAKE.
 | --- | --- |
 | `NIBBLES.HI` | The high score |
 
-The file is written to the current directory. Delete it to reset the high score.
+The file is written to the current directory and keeps this name in every version, whatever
+the program file is called. Delete it to reset the high score.
 
 ## Building the EXE
 
@@ -133,21 +135,9 @@ BC /O NIBBLESD.BAS;
 LINK NIBBLESD.OBJ,,,BCOM45.LIB;
 ```
 
-## Repository
-
-```
-Nibbles-Deluxe/
-|-- README.md
-`-- src/
-    `-- NIBBLESD.BAS
-```
-
-The EXE files are not stored in the repository, they are attached to the releases.
-
-Note for contributors: BASIC source files must be plain ASCII text with DOS line endings
-(CRLF), otherwise QB45 cannot load them correctly.
-
 ## History
+
+Newest version first.
 
 ### Version 2 - 2026-10-08
 
