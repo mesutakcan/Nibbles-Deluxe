@@ -8,11 +8,11 @@
 [![Downloads](https://img.shields.io/github/downloads/mesutakcan/Nibbles-Deluxe/total)](https://github.com/mesutakcan/Nibbles-Deluxe/releases)
 
 An improved version of the classic **Microsoft QBasic Nibbles** (1990), written in
-**QuickBASIC 4.5**. One or two players steer snakes around an arena, eat the numbers in
-order and try to stay alive.
+**QuickBASIC 4.5**. One or two players steer snakes around an arena, collect all the eggs
+and try to stay alive.
 
-The game runs in DOS / DOSBox (QuickBASIC 4.5 or QBasic 1.1), and since version 3 also
-natively on **Windows** (32 bit and 64 bit), compiled with
+The game runs in DOS / DOSBox (QuickBASIC 4.5 or QBasic 1.1), and also natively on
+**Windows** (32 bit and 64 bit), compiled with
 [QB64 Phoenix Edition](https://github.com/QB64-Phoenix-Edition/QB64pe).
 
 ![Nibbles Deluxe SS 1](docs/screenshot_1.png)
@@ -23,16 +23,21 @@ always called `NIBBLESD.BAS`.
 ## Features
 
 - Direct video memory graphics: fast, flicker free, exact colours
-- Settings menu: players, speed, colour theme, start level, sound, mines
+- Settings menu: players, speed, colour theme, start level, sound, mines, player names
 - Three colour themes: Classic, Night, Mono
 - Animated title screen with a big logo
+- Eggs to collect on every level (8 + level number, at most 25)
+- A heart appears when only one egg is left: catch it for an extra life
 - Bright snake heads; the snakes are visible before a round starts
 - Two-tone striped snake bodies
 - Red mines that appear during play (can be switched off)
 - Turn buffer: fast key presses are never lost, and a snake can no longer reverse into itself
 - Flashing bonus diamonds and a bonus for completing a level
-- Lives that really count down, game over screen with the winner
-- The high score is saved to `NIBBLES.HI`
+- Lives that really count down (the heart in the status line blinks on the last life),
+  game over screen with the winner
+- Player names can be changed in the menu
+- Settings and names are saved to `NIBBLES.CFG`; the high score and the name of its owner
+  are saved to `NIBBLES.HI`
 - The game speed is calibrated at start-up, so it plays the same on any computer
 - 12 levels (the 10 original levels plus 2 new ones)
 - Runs in DOS / DOSBox and natively on Windows (32 bit and 64 bit)
@@ -75,8 +80,8 @@ there without an emulator.
 1. Download `Nibbles-Deluxe-x64.exe` (or `Nibbles-Deluxe-x86.exe`) from the Releases page.
 2. Copy it to a folder where you may write files, and start it.
 
-The game saves `NIBBLES.HI` in the current directory, so do not run it from a folder that
-is write-protected.
+The game saves `NIBBLES.CFG` and `NIBBLES.HI` in the current directory, so do not run it from
+a folder that is write-protected.
 
 **The DOS EXE**
 
@@ -105,27 +110,33 @@ is write-protected.
 | SPACE or ENTER | Close a message box |
 
 Menus: UP / DOWN select a line, LEFT / RIGHT (or SPACE) change a setting, ENTER starts the
-game, ESC quits. On the game over screen ENTER plays again, M returns to the menu and ESC
-quits.
+game (on the two name lines ENTER lets you type a name), ESC quits. On the game over screen
+ENTER plays again, M returns to the menu and ESC quits.
 
 ## How to play
 
-Steer your snake and eat the numbers **1 to 9 in order**. When you have eaten the 9, the
-level is complete. You lose a life if your snake hits a wall, the other snake or its own
-tail. If both heads meet, both snakes die.
+Steer your snake and collect **all the eggs** of the level. The number of eggs is shown in
+the status line and grows with the level: 8 + the level number, at most 25. You lose a life
+if your snake hits a wall, the other snake, its own tail or a mine. If both heads meet, both
+snakes die.
 
-- **Number n**: n x 100 points, and your snake grows by n x 4 pixels.
-- **Flashing diamond**: 500 points. It shows up now and then after you eat a number and
+- **Egg**: 100 points, and your snake grows by 3 pixels.
+- **Flashing diamond**: 500 points. It shows up now and then after you eat an egg and
   disappears after a few seconds.
+- **Heart**: appears when only one egg is left, on the reachable spot that is farthest from
+  the snakes. It flashes faster and faster; catch it in time for one extra life (at most 9
+  lives). There is one heart per level. If you take the last egg first, the level ends and
+  the heart is lost.
 - **Level complete**: 500 bonus points.
-- **Lives**: 5 for every player. The game is over when a player has no life left. With two
-  players the higher score wins.
+- **Lives**: 5 for every player. The heart in the status line blinks when only one life is
+  left. The game is over when a player has no life left. With two players the higher score
+  wins.
 - **Speed**: gets about 7 percent faster with every level (can be switched off).
 
 If a snake crashes, the level starts again with the same walls. Red mines may appear
-randomly after a number is eaten. There can be up to three mines on screen at once;
-each flashes and disappears after about 12 seconds. Hitting one costs a life. Mines
-are enabled by default and can be switched off in the settings.
+randomly after an egg is eaten. There can be up to three mines on screen at once, never
+close to a snake head; each flashes and disappears after about 12 seconds. Hitting one costs
+a life. Mines are enabled by default and can be switched off in the settings.
 
 ## Levels
 
@@ -144,8 +155,11 @@ box with four gates and level 12 is a big plus sign. After level 12 the levels s
 | Colors | CLASSIC, NIGHT, MONO |
 | Sound | ON / OFF |
 | Mines | ON / OFF |
+| Player 1 name | up to 8 characters (default SAMMY) |
+| Player 2 name | up to 8 characters (default JAKE) |
 
-The players are called SAMMY and JAKE.
+The settings and the names are saved when you leave the menu and are loaded the next time
+the game starts.
 
 ![Nibbles Deluxe SS 3](docs/screenshot_3.png)
 
@@ -153,10 +167,12 @@ The players are called SAMMY and JAKE.
 
 | File | Content |
 | --- | --- |
-| `NIBBLES.HI` | The high score |
+| `NIBBLES.CFG` | The player names and all menu settings |
+| `NIBBLES.HI` | The high score and the name of its owner |
 
-The file is written to the current directory and keeps this name in every version, whatever
-the program file is called. Delete it to reset the high score.
+Both files are written to the current directory and keep these names in every version,
+whatever the program file is called. Delete them to start fresh. A `NIBBLES.HI` file from
+version 3 or earlier (score only) can still be read.
 
 ## Building the EXE
 
@@ -167,6 +183,8 @@ for Windows.
 
 In QB45: open `NIBBLESD.BAS`, choose **Run > Make EXE File**, select **Stand-Alone EXE File**
 and press **Make EXE**.
+
+![Make EXE File SS](docs/ss_make_exe_file.png)
 
 From the command line (QB45 tools):
 
@@ -214,6 +232,17 @@ Instead of the command line you can also open `NIBBLESD.BAS` in the QB64-PE edit
 ## History
 
 Newest version first.
+
+### Version 4 - 2026-10-10
+
+- Eggs replace the numbers 1 to 9: collect all the eggs of a level (8 + level number, at
+  most 25); every egg gives 100 points and makes the snake 3 pixels longer
+- The status line shows the number of eggs that are left
+- A heart appears when one egg is left; catching it gives an extra life (at most 9)
+- The heart in the status line blinks when a player has only one life left
+- Player names can be edited in the menu
+- Menu settings and names are saved to `NIBBLES.CFG`
+- The high score file also stores the name of the high score owner
 
 ### Version 3 - 2026-10-09
 
