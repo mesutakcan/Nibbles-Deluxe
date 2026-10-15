@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 3
-'  2026-10-09
+'  Version 4
+'  2026-10-10
 '===========================================================================
 
 DEFINT A-Z
@@ -33,12 +33,15 @@ END TYPE
 DECLARE FUNCTION AskYesNo (msg$)
 DECLARE FUNCTION BannerRow$ (i)
 DECLARE FUNCTION BodyColor (a, idx)
+DECLARE FUNCTION CellBusy (rr, cc)
+DECLARE FUNCTION CleanName$ (n$, dflt$)
 DECLARE FUNCTION GameOverScreen ()
 DECLARE FUNCTION MainMenu ()
 DECLARE FUNCTION Num7$ (v&)
 DECLARE FUNCTION PointIsThere (row, col)
 DECLARE SUB AddScore (a, pts)
 DECLARE SUB ApplyTheme ()
+DECLARE SUB BlinkHearts ()
 DECLARE SUB Calibrate ()
 DECLARE SUB Center (row, text$, attr)
 DECLARE SUB ChangeSetting (sel, d)
@@ -51,14 +54,17 @@ DECLARE SUB DrawCell (r, c)
 DECLARE SUB DrawHud ()
 DECLARE SUB DrawItems ()
 DECLARE SUB DrawMenu (sel)
+DECLARE SUB DrawMenuHint ()
+DECLARE SUB EditName (who)
 DECLARE SUB EraseSnake (a)
 DECLARE SUB FillRect (r1, c1, r2, c2, ch, attr)
 DECLARE SUB FindCell (rr, cc)
 DECLARE SUB FlashSnake (a)
 DECLARE SUB Intro ()
 DECLARE SUB Level (what)
+DECLARE SUB LoadConfig ()
 DECLARE SUB LoadHigh ()
-DECLARE SUB PlaceNumber ()
+DECLARE SUB PlaceEggs ()
 DECLARE SUB PlayNibbles ()
 DECLARE SUB PutChar (row, col, ch, attr)
 DECLARE SUB PutPixel (row, col, c)
@@ -66,11 +72,13 @@ DECLARE SUB PutStr (row, col, s$, attr)
 DECLARE SUB QueueTurn (who, d)
 DECLARE SUB ReadKeys ()
 DECLARE SUB RedrawRows (r1, r2)
+DECLARE SUB SaveConfig ()
 DECLARE SUB SaveHigh ()
 DECLARE SUB SetBlink (flag)
 DECLARE SUB Sfx (n)
 DECLARE SUB SparklePause ()
 DECLARE SUB SpawnBonus ()
+DECLARE SUB SpawnHeart ()
 DECLARE SUB SpawnMine ()
 DECLARE SUB Tick ()
 DECLARE SUB Wall (row, col)
@@ -83,9 +91,13 @@ CONST STARTLEN = 5
 CONST NUMLEVELS = 12
 CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
+CONST MAXEGG = 30         'eggs per level (at most)
+CONST EGGCHAR = 9         'character used for an egg
+CONST MAXLIVES = 9
 CONST STARTOVER = 1       'parameters of the Level SUB
 CONST SAMELEVEL = 2
 CONST NEXTLEVEL = 3
+CONST VERSIONTXT = "VERSION 4"   'shown on the title screen (update for every release)
 
 '---- Global variables --------------------------------------------------------
 'The playfield is 80 x 50 "pixels": every text character holds two pixels
@@ -97,12 +109,16 @@ DIM SHARED qd(1 TO 2, 1 TO 3), qn(1 TO 2)       'buffered turns per snake
 DIM SHARED pal(1 TO 15)                           'colour table, see ApplyTheme
 DIM SHARED minRow(1 TO MAXMINE), minCol(1 TO MAXMINE), minTime(1 TO MAXMINE)
 DIM SHARED hitMine(1 TO 2)
+DIM SHARED eggRow(1 TO MAXEGG), eggCol(1 TO MAXEGG)
+DIM SHARED bfsDist(1 TO 50, 1 TO 80), bfsQ(0 TO 3999)   'path search for the heart
+DIM SHARED hiName$
 DIM SHARED nm$(1 TO 2)
 DIM SHARED vidSeg AS LONG
 DIM SHARED highScore AS LONG
 DIM SHARED loopsPerMs AS SINGLE
 DIM SHARED curLevel, numPlayers, speedSet, speedUp, startLevel, theme, soundOn, minesOn
-DIM SHARED numRow, numCol, numVal, bonRow, bonCol, bonOn, bonTime
+DIM SHARED bonRow, bonCol, bonOn, bonTime, eggLeft, eggTotal
+DIM SHARED heartOn, heartRow, heartCol, heartTime, heartMax, heartDone, tickCnt
 DIM SHARED newHigh, abortGame, anyDead, levelDone, stepMs
 DIM SHARED fileFail, fileBusy
 
@@ -121,6 +137,7 @@ DEF SEG
 nm$(1) = "SAMMY": nm$(2) = "JAKE"
 numPlayers = 1: speedSet = 5: speedUp = TRUE
 startLevel = 1: theme = 1: soundOn = TRUE: minesOn = TRUE
+LoadConfig
 ApplyTheme
 LoadHigh
 SetBlink FALSE                'allows 16 background colours
@@ -133,7 +150,9 @@ Calibrate
 Intro
 quitAll = FALSE
 DO
-    IF NOT MainMenu THEN EXIT DO
+    startIt = MainMenu
+    SaveConfig
+    IF NOT startIt THEN EXIT DO
     ApplyTheme
     DO
         PlayNibbles
@@ -165,6 +184,7 @@ SUB AddScore (a, pts)
     sammy(a).score = sammy(a).score + pts
     IF sammy(a).score > highScore THEN
         highScore = sammy(a).score
+        hiName$ = nm$(a)
         newHigh = TRUE
     END IF
 END SUB
@@ -226,6 +246,18 @@ FUNCTION BannerRow$ (i)
     END SELECT
 END FUNCTION
 
+'BlinkHearts:
+'  The heart of a player with only one life blinks in the status line
+SUB BlinkHearts
+    hb = pal(12) * 16
+    IF theme = 3 THEN hc = pal(11) ELSE hc = 12
+    IF (tickCnt AND 4) = 0 THEN fc = hc ELSE fc = pal(12)
+    IF sammy(1).lives = 1 THEN PutChar 1, 11, 3, fc + hb
+    IF numPlayers = 2 THEN
+        IF sammy(2).lives = 1 THEN PutChar 1, 66, 3, fc + hb
+    END IF
+END SUB
+
 'BodyColor:
 '  Body colour of a snake segment: two shades alternate along the body
 FUNCTION BodyColor (a, idx)
@@ -254,6 +286,26 @@ SUB Calibrate
     IF el < .01 THEN el = .01
     loopsPerMs = n / (el * 1000)
 END SUB
+
+'CellBusy:
+'  TRUE if an item (egg, bonus, heart, mine) already sits on the text cell
+FUNCTION CellBusy (rr, cc)
+    CellBusy = FALSE
+    FOR e = 1 TO MAXEGG
+        IF eggRow(e) = rr AND eggCol(e) = cc THEN CellBusy = TRUE
+    NEXT e
+    IF bonOn THEN
+        IF bonRow = rr AND bonCol = cc THEN CellBusy = TRUE
+    END IF
+    IF heartOn THEN
+        IF heartRow = rr AND heartCol = cc THEN CellBusy = TRUE
+    END IF
+    FOR m = 1 TO MAXMINE
+        IF minTime(m) > 0 THEN
+            IF minRow(m) = rr AND minCol(m) = cc THEN CellBusy = TRUE
+        END IF
+    NEXT m
+END FUNCTION
 
 'Center:
 '  Prints text centred on the given row
@@ -287,6 +339,20 @@ SUB ChangeSetting (sel, d)
             minesOn = NOT minesOn
     END SELECT
 END SUB
+
+'CleanName$:
+'  Makes a valid player name: upper case, 1 to 8 printable characters
+FUNCTION CleanName$ (n$, dflt$)
+    res$ = ""
+    FOR i = 1 TO LEN(n$)
+        ch = ASC(MID$(n$, i, 1))
+        IF ch >= 32 AND ch <= 126 AND ch <> 34 AND ch <> 44 THEN res$ = res$ + MID$(n$, i, 1)
+    NEXT i
+    res$ = LTRIM$(RTRIM$(UCASE$(res$)))
+    IF LEN(res$) > 8 THEN res$ = LEFT$(res$, 8)
+    IF LEN(res$) = 0 THEN res$ = dflt$
+    CleanName$ = res$
+END FUNCTION
 
 'ClearScreen:
 '  Clears the whole screen with the given attribute
@@ -381,7 +447,7 @@ SUB DrawCell (r, c)
 END SUB
 
 'DrawHud:
-'  Status line (row 1): names, lives, scores, level and high score
+'  Status line (row 1): names, lives, scores, level, eggs left, high score
 SUB DrawHud
     hb = pal(12) * 16
     FillRect 1, 1, 1, 80, 32, pal(11) + hb
@@ -389,30 +455,38 @@ SUB DrawHud
 
     lv = sammy(1).lives
     IF lv < 0 THEN lv = 0
-    IF lv > 5 THEN lv = 5
+    IF lv > MAXLIVES THEN lv = MAXLIVES
     PutStr 1, 2, nm$(1), pal(1) + hb
-    PutStr 1, 9, STRING$(lv, 3) + SPACE$(5 - lv), hc + hb
-    PutStr 1, 15, Num7$(sammy(1).score), pal(11) + hb
+    PutStr 1, 11, CHR$(3), hc + hb
+    PutStr 1, 13, LTRIM$(STR$(lv)), pal(11) + hb
+    PutStr 1, 16, Num7$(sammy(1).score), pal(11) + hb
 
-    Center 1, "LEVEL" + STR$(curLevel) + "    HI " + Num7$(highScore), pal(11) + hb
+    Center 1, "LEVEL" + STR$(curLevel) + "   " + CHR$(EGGCHAR) + STR$(eggLeft) + "   HI " + Num7$(highScore), pal(11) + hb
 
     IF numPlayers = 2 THEN
         lv = sammy(2).lives
         IF lv < 0 THEN lv = 0
-        IF lv > 5 THEN lv = 5
-        PutStr 1, 60, Num7$(sammy(2).score), pal(11) + hb
-        PutStr 1, 68, STRING$(lv, 3) + SPACE$(5 - lv), hc + hb
-        PutStr 1, 74, nm$(2), pal(2) + hb
+        IF lv > MAXLIVES THEN lv = MAXLIVES
+        PutStr 1, 58, Num7$(sammy(2).score), pal(11) + hb
+        PutStr 1, 66, CHR$(3), hc + hb
+        PutStr 1, 68, LTRIM$(STR$(lv)), pal(11) + hb
+        PutStr 1, 71, nm$(2), pal(2) + hb
     ELSE
         PutStr 1, 62, "P=Pause  ESC=Quit", pal(11) + hb
     END IF
 END SUB
 
 'DrawItems:
-'  Draws the current number and the bonus diamond (if any)
+'  Draws the eggs, the bonus diamond, the heart and the mines
 SUB DrawItems
-    IF numRow > 0 THEN PutChar numRow, numCol, 48 + numVal, pal(9) + pal(4) * 16
+    FOR e = 1 TO MAXEGG
+        IF eggRow(e) > 0 THEN PutChar eggRow(e), eggCol(e), EGGCHAR, pal(9) + pal(4) * 16
+    NEXT e
     IF bonOn THEN PutChar bonRow, bonCol, 4, pal(10) + pal(4) * 16
+    IF heartOn THEN
+        IF theme = 3 THEN hc = 15 ELSE hc = 12
+        PutChar heartRow, heartCol, 3, hc + pal(4) * 16
+    END IF
     FOR m = 1 TO MAXMINE
         IF minTime(m) > 0 THEN PutChar minRow(m), minCol(m), MINECHAR, pal(15) + pal(4) * 16
     NEXT m
@@ -421,9 +495,9 @@ END SUB
 'DrawMenu:
 '  Draws the settings menu, sel is the highlighted line
 SUB DrawMenu (sel)
-    FOR i = 1 TO 9
+    FOR i = 1 TO 11
         r = 10 + i
-        IF i >= 8 THEN r = r + 1
+        IF i >= 10 THEN r = r + 1
         IF i = sel THEN attr = 0 + 7 * 16 ELSE attr = 7
         FillRect r, 19, r, 62, 32, attr
         SELECT CASE i
@@ -434,6 +508,8 @@ SUB DrawMenu (sel)
             CASE 5: lab$ = "Colors"
             CASE 6: lab$ = "Sound"
             CASE 7: lab$ = "Mines"
+            CASE 8: lab$ = "Player 1 name"
+            CASE 9: lab$ = "Player 2 name"
             CASE ELSE: lab$ = ""
         END SELECT
         SELECT CASE i
@@ -455,23 +531,73 @@ SUB DrawMenu (sel)
                 IF soundOn THEN v$ = "ON" ELSE v$ = "OFF"
             CASE 7
                 IF minesOn THEN v$ = "ON" ELSE v$ = "OFF"
+            CASE 8
+                v$ = nm$(1)
+            CASE 9
+                v$ = nm$(2)
             CASE ELSE
                 v$ = ""
         END SELECT
-        IF i <= 7 THEN
+        IF i <= 9 THEN
             PutStr r, 22, lab$, attr
             IF i = sel THEN
-                v$ = CHR$(17) + " " + v$ + " " + CHR$(16)
+                IF i >= 8 THEN
+                    v$ = v$ + "  [ENTER]"
+                ELSE
+                    v$ = CHR$(17) + " " + v$ + " " + CHR$(16)
+                END IF
                 PutStr r, 42, v$, attr
             ELSE
                 PutStr r, 44, v$, 15
             END IF
-        ELSEIF i = 8 THEN
+        ELSEIF i = 10 THEN
             Center r, "S T A R T   G A M E", attr
         ELSE
             Center r, "Q U I T", attr
         END IF
     NEXT i
+END SUB
+
+'DrawMenuHint:
+'  Help line of the menu
+SUB DrawMenuHint
+    FillRect 24, 1, 24, 80, 32, 7
+    Center 24, "UP/DOWN select    LEFT/RIGHT change    ENTER start    ESC quit", 7
+END SUB
+
+'EditName:
+'  Lets the user type a new name for player who (1 or 2)
+SUB EditName (who)
+    IF who = 1 THEN
+        r = 18
+        dflt$ = "SAMMY"
+    ELSE
+        r = 19
+        dflt$ = "JAKE"
+    END IF
+    FillRect 24, 1, 24, 80, 32, 7
+    Center 24, "Type a name (max 8 characters)    ENTER = ok    ESC = cancel", 14
+    n$ = ""
+    cancelled = FALSE
+    DO
+        PutStr r, 42, SPACE$(14), 112
+        PutStr r, 42, n$ + "_", 112
+        DO
+            k$ = INKEY$
+        LOOP WHILE k$ = ""
+        IF k$ = CHR$(13) THEN
+            EXIT DO
+        ELSEIF k$ = CHR$(27) THEN
+            cancelled = TRUE
+            EXIT DO
+        ELSEIF k$ = CHR$(8) THEN
+            IF LEN(n$) > 0 THEN n$ = LEFT$(n$, LEN(n$) - 1)
+        ELSEIF LEN(k$) = 1 THEN
+            ch = ASC(k$)
+            IF ch >= 32 AND ch <= 126 AND ch <> 34 AND ch <> 44 AND LEN(n$) < 8 THEN n$ = n$ + UCASE$(k$)
+        END IF
+    LOOP
+    IF NOT cancelled THEN nm$(who) = CleanName$(n$, dflt$)
 END SUB
 
 'EraseSnake:
@@ -500,7 +626,7 @@ SUB FillRect (r1, c1, r2, c2, ch, attr)
 END SUB
 
 'FindCell:
-'  Finds a free text cell (both pixels empty) for a number or bonus
+'  Finds a free text cell (both pixels empty, no item) for an item
 SUB FindCell (rr, cc)
     tries = 0
     DO
@@ -511,15 +637,7 @@ SUB FindCell (rr, cc)
         rr = (p + 1) \ 2
         ok = (arena(p, cc) = pal(4)) AND (arena(q, cc) = pal(4))
         IF ok THEN
-            IF numRow = rr AND numCol = cc THEN ok = FALSE
-            IF bonOn THEN
-                IF bonRow = rr AND bonCol = cc THEN ok = FALSE
-            END IF
-            FOR m = 1 TO MAXMINE
-                IF minTime(m) > 0 THEN
-                    IF minRow(m) = rr AND minCol(m) = cc THEN ok = FALSE
-                END IF
-            NEXT m
+            IF CellBusy(rr, cc) THEN ok = FALSE
         END IF
     LOOP UNTIL ok OR tries > 2000
 END SUB
@@ -563,7 +681,7 @@ FUNCTION GameOverScreen
     IF newHigh THEN
         Center 14, "*  NEW HIGH SCORE!  *", attr
     ELSE
-        Center 14, "High score" + STR$(highScore), attr
+        Center 14, "High score" + STR$(highScore) + "  " + hiName$, attr
     END IF
     Center 16, "ENTER = play again", attr
     Center 17, "M = menu      ESC = quit", attr
@@ -590,13 +708,16 @@ END FUNCTION
 SUB Intro
     ClearScreen 7
     DrawBanner 3, 0, TRUE
-    Center 10, "D E L U X E   E D I T I O N", 14
+    t$ = "D E L U X E   E D I T I O N"
+    c0 = (80 - LEN(t$) - 4 - LEN(VERSIONTXT)) \ 2 + 1
+    PutStr 10, c0, t$, 14
+    PutStr 10, c0 + LEN(t$) + 4, VERSIONTXT, 15
     Center 11, "based on Microsoft QBasic Nibbles (C) 1990", 8
 
-    Center 13, "Steer your snake around the arena and eat the numbers in order,", 7
-    Center 14, "from 1 to 9.  Every number makes you longer and gives more points.", 7
-    Center 15, "Grab the flashing diamond for a bonus.  Never hit a wall, the other", 7
-    Center 16, "snake, your own tail or a red mine (mines pop up from time to time)!", 7
+    Center 13, "Steer your snake around the arena and collect all the eggs to", 7
+    Center 14, "finish a level.  Every egg makes you longer and scores 100 points.", 7
+    Center 15, "Catch the flashing diamond for a bonus and the heart for an extra life!", 7
+    Center 16, "Avoid walls, the other snake, your own tail and the red mines.", 7
 
     Center 18, "PLAYER 1  -  arrow keys  (or keypad 8 2 4 6)", 11
     Center 19, "PLAYER 2  -  W A S D     (W A S D also work in 1 player mode)", 13
@@ -799,15 +920,46 @@ SUB Level (what)
         sammy(a).length = STARTLEN
     NEXT a
 
-    numVal = 0: numRow = 0: bonOn = FALSE
+    bonOn = FALSE: heartOn = FALSE: heartDone = FALSE
     FOR m = 1 TO MAXMINE
         minTime(m) = 0
     NEXT m
+    PlaceEggs
     RedrawRows 2, 25
 END SUB
 
+'LoadConfig:
+'  Reads names and menu settings from NIBBLES.CFG
+SUB LoadConfig
+    fileFail = FALSE
+    fileBusy = TRUE
+    OPEN "NIBBLES.CFG" FOR APPEND AS #1      'creates the file if missing
+    CLOSE #1
+    IF NOT fileFail THEN
+        OPEN "NIBBLES.CFG" FOR INPUT AS #1
+        IF NOT fileFail THEN
+            IF NOT EOF(1) THEN
+                INPUT #1, n1$, n2$, np, sp, su, sl, th, so, mo
+                IF NOT fileFail THEN
+                    nm$(1) = CleanName$(n1$, "SAMMY")
+                    nm$(2) = CleanName$(n2$, "JAKE")
+                    IF np = 1 OR np = 2 THEN numPlayers = np
+                    IF sp >= 1 AND sp <= 10 THEN speedSet = sp
+                    speedUp = (su <> 0)
+                    IF sl >= 1 AND sl <= NUMLEVELS THEN startLevel = sl
+                    IF th >= 1 AND th <= 3 THEN theme = th
+                    soundOn = (so <> 0)
+                    minesOn = (mo <> 0)
+                END IF
+            END IF
+            CLOSE #1
+        END IF
+    END IF
+    fileBusy = FALSE
+END SUB
+
 'LoadHigh:
-'  Reads the high score from NIBBLES.HI
+'  Reads the high score (and the name of its owner) from NIBBLES.HI
 SUB LoadHigh
     fileFail = FALSE
     fileBusy = TRUE
@@ -817,11 +969,13 @@ SUB LoadHigh
         OPEN "NIBBLES.HI" FOR INPUT AS #1
         IF NOT fileFail THEN
             IF NOT EOF(1) THEN INPUT #1, highScore
+            IF NOT EOF(1) THEN INPUT #1, hiName$
             CLOSE #1
         END IF
     END IF
     fileBusy = FALSE
     IF highScore < 0 THEN highScore = 0
+    hiName$ = CleanName$(hiName$, "")
 END SUB
 
 'MainMenu:
@@ -829,12 +983,12 @@ END SUB
 FUNCTION MainMenu
     ClearScreen 7
     DrawBanner 2, 0, TRUE
-    DrawBox 9, 18, 22, 63, 11
+    DrawBox 9, 18, 23, 63, 11
     Center 9, " S E T T I N G S ", 14
-    Center 23, "UP/DOWN select    LEFT/RIGHT change    ENTER start    ESC quit", 7
-    Center 24, "High score:" + STR$(highScore), 14
+    DrawMenuHint
+    Center 25, "High score:" + STR$(highScore) + "  " + hiName$, 14
 
-    sel = 8
+    sel = 10
     DO
         DrawMenu sel
         DO
@@ -843,19 +997,29 @@ FUNCTION MainMenu
         SELECT CASE k$
             CASE CHR$(0) + "H"
                 sel = sel - 1
-                IF sel < 1 THEN sel = 9
+                IF sel < 1 THEN sel = 11
             CASE CHR$(0) + "P"
                 sel = sel + 1
-                IF sel > 9 THEN sel = 1
+                IF sel > 11 THEN sel = 1
             CASE CHR$(0) + "K"
                 ChangeSetting sel, -1
             CASE CHR$(0) + "M"
                 ChangeSetting sel, 1
             CASE " "
-                IF sel <= 7 THEN ChangeSetting sel, 1
+                IF sel <= 7 THEN
+                    ChangeSetting sel, 1
+                ELSEIF sel = 8 OR sel = 9 THEN
+                    EditName sel - 7
+                    DrawMenuHint
+                END IF
             CASE CHR$(13)
-                IF sel = 9 THEN MainMenu = FALSE ELSE MainMenu = TRUE
-                EXIT DO
+                IF sel = 8 OR sel = 9 THEN
+                    EditName sel - 7
+                    DrawMenuHint
+                ELSE
+                    IF sel = 11 THEN MainMenu = FALSE ELSE MainMenu = TRUE
+                    EXIT DO
+                END IF
             CASE CHR$(27)
                 MainMenu = FALSE
                 EXIT DO
@@ -869,14 +1033,32 @@ FUNCTION Num7$ (v&)
     Num7$ = RIGHT$(SPACE$(7) + LTRIM$(STR$(v&)), 7)
 END FUNCTION
 
-'PlaceNumber:
-'  Puts the next number on a free spot
-SUB PlaceNumber
-    numRow = 0
-    FindCell r, c
-    numRow = r
-    numCol = c
-    PutChar numRow, numCol, 48 + numVal, pal(9) + pal(4) * 16
+'PlaceEggs:
+'  Scatters the eggs of a level (not near the snakes, not on items)
+SUB PlaceEggs
+    eggTotal = 8 + curLevel
+    IF eggTotal > 25 THEN eggTotal = 25
+    eggLeft = eggTotal
+    FOR e = 1 TO MAXEGG
+        eggRow(e) = 0
+        eggCol(e) = 0
+    NEXT e
+    FOR e = 1 TO eggTotal
+        FOR attempt = 1 TO 40
+            FindCell r, c
+            okFar = TRUE
+            FOR a = 1 TO numPlayers
+                dx = ABS(c - sammy(a).col)
+                dy = ABS(r * 2 - sammy(a).row)
+                dy2 = ABS(r * 2 - 1 - sammy(a).row)
+                IF dy2 < dy THEN dy = dy2
+                IF dx <= 8 AND dy <= 8 THEN okFar = FALSE
+            NEXT a
+            IF okFar THEN EXIT FOR
+        NEXT attempt
+        eggRow(e) = r
+        eggCol(e) = c
+    NEXT e
 END SUB
 
 'PlayNibbles:
@@ -884,6 +1066,7 @@ END SUB
 SUB PlayNibbles
     abortGame = FALSE
     newHigh = FALSE
+    tickCnt = 0
     FOR a = 1 TO 2
         sammy(a).lives = 5
         sammy(a).score = 0
@@ -892,7 +1075,7 @@ SUB PlayNibbles
     ClearScreen pal(4) * 16 + 7
     Level STARTOVER
     DrawHud
-    Dialog "L E V E L" + STR$(curLevel), "Get ready!", "Press SPACE to start"
+    Dialog "L E V E L" + STR$(curLevel), "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to start"
     Sfx 1
 
     gameOver = FALSE
@@ -902,11 +1085,9 @@ SUB PlayNibbles
         IF speedUp THEN stepMs = INT(stepMs * .93 ^ (curLevel - startLevel))
         IF stepMs < 8 THEN stepMs = 8
 
-        numVal = 1
         bonOn = FALSE
         hitMine(1) = FALSE
         hitMine(2) = FALSE
-        PlaceNumber
         anyDead = FALSE
         levelDone = FALSE
 
@@ -929,8 +1110,8 @@ SUB PlayNibbles
             FOR a = 1 TO numPlayers
                 EraseSnake a
             NEXT a
-            numRow = 0
             bonOn = FALSE
+            heartOn = FALSE
             FOR m = 1 TO MAXMINE
                 minTime(m) = 0
             NEXT m
@@ -959,7 +1140,7 @@ SUB PlayNibbles
             ELSE
                 Level SAMELEVEL
                 DrawHud
-                Dialog msg$, "Try again!", "Press SPACE to continue"
+                Dialog msg$, "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to continue"
             END IF
         ELSE
             'level completed
@@ -971,7 +1152,7 @@ SUB PlayNibbles
             Dialog "LEVEL COMPLETE!", "Bonus +500 points", "Press SPACE"
             Level NEXTLEVEL
             DrawHud
-            Dialog "L E V E L" + STR$(curLevel), "Get ready!", "Press SPACE to start"
+            Dialog "L E V E L" + STR$(curLevel), "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to start"
         END IF
     LOOP UNTIL gameOver
 
@@ -1079,14 +1260,28 @@ SUB RedrawRows (r1, r2)
     DrawItems
 END SUB
 
+'SaveConfig:
+'  Writes names and menu settings to NIBBLES.CFG
+SUB SaveConfig
+    fileFail = FALSE
+    fileBusy = TRUE
+    OPEN "NIBBLES.CFG" FOR OUTPUT AS #1
+    IF NOT fileFail THEN
+        WRITE #1, nm$(1), nm$(2), numPlayers, speedSet, speedUp, startLevel, theme, soundOn, minesOn
+        CLOSE #1
+    END IF
+    fileBusy = FALSE
+END SUB
+
 'SaveHigh:
-'  Writes the high score to NIBBLES.HI
+'  Writes the high score and its owner to NIBBLES.HI
 SUB SaveHigh
     fileFail = FALSE
     fileBusy = TRUE
     OPEN "NIBBLES.HI" FOR OUTPUT AS #1
     IF NOT fileFail THEN
         PRINT #1, highScore
+        WRITE #1, hiName$
         CLOSE #1
     END IF
     fileBusy = FALSE
@@ -1114,6 +1309,8 @@ SUB Sfx (n)
         CASE 4: PLAY "MBT160O2L16CEGO3CEGO4C"          'level complete
         CASE 5: PLAY "MBT200O3L32EGB>CL16E"            'bonus
         CASE 6: PLAY "MBT200O1L32DC"                    'mine appears
+        CASE 7: PLAY "MBT220O2L32GBGB"                  'heart appears
+        CASE 8: PLAY "MBT180O3L16CEGB>CE"               'heart caught
     END SELECT
 END SUB
 
@@ -1162,6 +1359,86 @@ SUB SpawnBonus
     PutChar bonRow, bonCol, 4, pal(10) + pal(4) * 16
 END SUB
 
+'SpawnHeart:
+'  Puts the heart on the reachable cell that is farthest (by real path
+'  length) from the snakes.  The time limit follows from that distance.
+SUB SpawnHeart
+    FOR r = 1 TO 50
+        FOR c = 1 TO 80
+            bfsDist(r, c) = -1
+        NEXT c
+    NEXT r
+    qh = 0
+    qt = 0
+    FOR a = 1 TO numPlayers
+        IF sammy(a).alive THEN
+            bfsDist(sammy(a).row, sammy(a).col) = 0
+            bfsQ(qt) = (sammy(a).row - 1) * 80 + sammy(a).col - 1
+            qt = qt + 1
+        END IF
+    NEXT a
+
+    DO WHILE qh < qt
+        cur = bfsQ(qh)
+        qh = qh + 1
+        r = cur \ 80 + 1
+        c = cur MOD 80 + 1
+        d = bfsDist(r, c) + 1
+        FOR k = 1 TO 4
+            nr = r
+            nc = c
+            SELECT CASE k
+                CASE 1: nr = r - 1
+                CASE 2: nr = r + 1
+                CASE 3: nc = c - 1
+                CASE ELSE: nc = c + 1
+            END SELECT
+            IF nr >= 3 AND nr <= 50 AND nc >= 1 AND nc <= 80 THEN
+                IF bfsDist(nr, nc) < 0 THEN
+                    IF arena(nr, nc) = pal(4) THEN
+                        bfsDist(nr, nc) = d
+                        bfsQ(qt) = (nr - 1) * 80 + nc - 1
+                        qt = qt + 1
+                    END IF
+                END IF
+            END IF
+        NEXT k
+    LOOP
+
+    best = -1
+    bestR = 0
+    bestC = 0
+    FOR rr = 2 TO 25
+        FOR cc = 2 TO 79
+            d1 = bfsDist(rr * 2 - 1, cc)
+            d2 = bfsDist(rr * 2, cc)
+            IF d1 >= 0 AND d2 >= 0 THEN
+                dd = d1
+                IF d2 < dd THEN dd = d2
+                IF dd > best THEN
+                    IF NOT CellBusy(rr, cc) THEN
+                        best = dd
+                        bestR = rr
+                        bestC = cc
+                    END IF
+                END IF
+            END IF
+        NEXT cc
+    NEXT rr
+
+    IF best >= 6 THEN
+        heartRow = bestR
+        heartCol = bestC
+        heartMax = best + best \ 3 + 12
+        heartTime = heartMax
+        heartOn = TRUE
+        heartDone = TRUE
+        IF theme = 3 THEN hc = 15 ELSE hc = 12
+        PutChar heartRow, heartCol, 3, hc + pal(4) * 16
+        Sfx 7
+    END IF
+END SUB
+
 'SpawnMine:
 '  Puts a mine on a free spot that is not close to any snake head.  The
 '  required distance grows with the game speed (about 0.7 seconds of travel).
@@ -1198,8 +1475,11 @@ SUB SpawnMine
 END SUB
 
 'Tick:
-'  One step of the game: lifetime of the bonus, move all snakes, collisions
+'  One step of the game: timers, move all snakes, collisions, eating
 SUB Tick
+    tickCnt = (tickCnt + 1) AND 255
+    IF (tickCnt AND 3) = 0 THEN BlinkHearts
+
     'the bonus diamond flashes and disappears after a while
     IF bonOn THEN
         bonTime = bonTime - 1
@@ -1224,6 +1504,32 @@ SUB Tick
             END IF
         END IF
     NEXT m
+
+    'the heart flashes faster and faster, then it is gone
+    IF heartOn THEN
+        heartTime = heartTime - 1
+        IF heartTime <= 0 THEN
+            heartOn = FALSE
+            DrawCell heartRow, heartCol
+        ELSE
+            IF heartTime * 4 < heartMax THEN
+                hs = 1
+            ELSEIF heartTime * 2 < heartMax THEN
+                hs = 2
+            ELSE
+                hs = 4
+            END IF
+            IF theme = 3 THEN
+                hc = 15
+                fc = 8
+            ELSE
+                hc = 12
+                fc = pal(9)
+            END IF
+            IF (heartTime \ hs) AND 1 THEN fc = hc
+            PutChar heartRow, heartCol, 3, fc + pal(4) * 16
+        END IF
+    END IF
 
     'phase 1: every snake takes its next buffered turn and moves its head
     FOR a = 1 TO numPlayers
@@ -1283,34 +1589,44 @@ SUB Tick
                 sammy(a).count = sammy(a).count - 1
             END IF
 
-            'did the head reach the number or the bonus?
-            rr = (r + 1) \ 2
-            IF numRow = rr AND numCol = c THEN
-                Sfx 2
-                IF sammy(a).length < MAXSNAKELENGTH - 60 THEN
-                    sammy(a).length = sammy(a).length + numVal * 4
-                END IF
-                AddScore a, numVal * 100
-                numVal = numVal + 1
-                numRow = 0
-                IF numVal = 10 THEN
-                    levelDone = TRUE
-                ELSE
-                    PlaceNumber
-                    IF NOT bonOn THEN
-                        IF INT(RND * 3) = 0 THEN SpawnBonus
+            'did the head reach an egg, the bonus or the heart?
+            FOR e = 1 TO eggTotal
+                IF eggRow(e) = rr AND eggCol(e) = c THEN
+                    eggRow(e) = 0
+                    Sfx 2
+                    IF sammy(a).length < MAXSNAKELENGTH - 60 THEN
+                        sammy(a).length = sammy(a).length + 3
                     END IF
-                    IF minesOn THEN
-                        IF INT(RND * 3) = 0 THEN SpawnMine
+                    AddScore a, 100
+                    eggLeft = eggLeft - 1
+                    IF eggLeft <= 0 THEN
+                        levelDone = TRUE
+                    ELSE
+                        IF NOT bonOn THEN
+                            IF INT(RND * 3) = 0 THEN SpawnBonus
+                        END IF
+                        IF minesOn THEN
+                            IF INT(RND * 3) = 0 THEN SpawnMine
+                        END IF
+                        IF eggLeft = 1 AND NOT heartDone THEN SpawnHeart
                     END IF
+                    DrawHud
+                    EXIT FOR
                 END IF
-                DrawHud
-            END IF
+            NEXT e
             IF bonOn THEN
                 IF bonRow = rr AND bonCol = c THEN
                     bonOn = FALSE
                     Sfx 5
                     AddScore a, 500
+                    DrawHud
+                END IF
+            END IF
+            IF heartOn THEN
+                IF heartRow = rr AND heartCol = c THEN
+                    heartOn = FALSE
+                    IF sammy(a).lives < MAXLIVES THEN sammy(a).lives = sammy(a).lives + 1
+                    Sfx 8
                     DrawHud
                 END IF
             END IF
