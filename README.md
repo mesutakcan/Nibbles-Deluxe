@@ -30,7 +30,10 @@ always called `NIBBLESD.BAS`.
 - A heart appears when only one egg is left: catch it for an extra life
 - Bright snake heads; the snakes are visible before a round starts
 - Two-tone striped snake bodies
-- Red mines that appear during play (can be switched off)
+- Red mines: random mines pop up during play, fixed mines are placed when a level starts
+  (the game checks that every egg stays reachable); mode OFF / RANDOM / FIXED / BOTH
+- Three death animations, chosen at random
+- The egg counter in the status line blinks when only 1 or 2 eggs are left
 - Turn buffer: fast key presses are never lost, and a snake can no longer reverse into itself
 - Flashing bonus diamonds and a bonus for completing a level
 - Lives that really count down (the heart in the status line blinks on the last life),
@@ -67,11 +70,9 @@ The BASIC source is in the [`src`](src) folder.
 
 - **Windows version:** Windows with the x86 or x64 file; nothing else is needed.
 - **DOS version:** a VGA colour display (DOS, or an emulator such as DOSBox).
-- **To run the source:** QuickBASIC 4.5 (QB45), or compile it with QB64-PE.
+- **To run the source:** QuickBASIC 4.5 (QB45), QBasic 1.1, or QB64-PE
 
-The game was developed and tested with QuickBASIC 4.5 in DOSBox. The source is written to run
-in QBasic 1.1 as well. The Windows builds were compiled with QB64-PE on Windows 11 and run
-there without an emulator.
+The game was developed and tested with QuickBASIC 4.5 in DOSBox. The source has also been tested and runs in QBasic 1.1 and QB64-PE. The Windows builds are compiled with QB64-PE on Windows 11 and run there without an emulator.
 
 ## How to run
 
@@ -136,7 +137,15 @@ snakes die.
 If a snake crashes, the level starts again with the same walls. Red mines may appear
 randomly after an egg is eaten. There can be up to three mines on screen at once, never
 close to a snake head; each flashes and disappears after about 12 seconds. Hitting one costs
-a life. Mines are enabled by default and can be switched off in the settings.
+a life.
+
+**Fixed mines** are placed when a level starts (from level 2: level number / 2, at most 6;
+with two players they come in point symmetric pairs, so neither side has an advantage) and
+stay until the level ends. A path search makes sure that every egg can still be reached.
+Which kinds of mines appear is set with the **Mines** setting (default BOTH).
+
+When a snake dies, one of three death animations is played (the two body shades blink away
+in turn, the snake is wiped out from head to tail, or both one after the other).
 
 ## Levels
 
@@ -154,7 +163,7 @@ box with four gates and level 12 is a big plus sign. After level 12 the levels s
 | Start level | 1 to 12 |
 | Colors | CLASSIC, NIGHT, MONO |
 | Sound | ON / OFF |
-| Mines | ON / OFF |
+| Mines | OFF, RANDOM, FIXED, BOTH |
 | Player 1 name | up to 8 characters (default SAMMY) |
 | Player 2 name | up to 8 characters (default JAKE) |
 
@@ -186,12 +195,22 @@ and press **Make EXE**.
 
 ![Make EXE File SS](docs/ss_make_exe_file.png)
 
-From the command line (QB45 tools):
+From the command line (QB45 tools). The program uses `ON ERROR ... RESUME NEXT` for the
+file access, so it has to be compiled with `/E` and `/X`:
 
 ```
-BC /O NIBBLESD.BAS;
-LINK NIBBLESD.OBJ,,,BCOM45.LIB;
+BC NIBBLESD.BAS /E/X/O/T/C:512;
+LINK /EX NIBBLESD.OBJ,NIBBLESD.EXE,NUL,BCOM45.LIB;
 ```
+
+`/E` and `/X` support `ON ERROR` and `RESUME`, `/O` makes a stand-alone program, `/T`
+suppresses warning messages, `/C:512` sets the communications buffer size, and `LINK /EX`
+packs the EXE file. Run both commands in the folder that holds `NIBBLESD.BAS` and
+`BCOM45.LIB` (or give full paths).
+
+In DOSBox you can start the same commands from the
+`mount`ed QB45 folder, for example `C:\QB45\BC.EXE C:\QB45\NIBBLES\SRC\NIBBLESD.BAS/E/X/O/T/C:512;`
+followed by `C:\QB45\LINK.EXE /EX NIBBLESD.OBJ,NIBBLESD.EXE,NUL,C:\QB45\LIB\BCOM45.LIB;`.
 
 ### Windows EXE (32 bit and 64 bit) with QB64-PE
 
@@ -232,6 +251,16 @@ Instead of the command line you can also open `NIBBLESD.BAS` in the QB64-PE edit
 ## History
 
 Newest version first.
+
+### Version 5 - 2026-10-11
+
+- Three death animations (blinking body shades, wipe from head to tail, or both), picked at
+  random
+- Fixed mines placed at the start of a level (symmetric pairs with two players); a path
+  search checks that every egg stays reachable
+- New **Mines** setting: OFF, RANDOM, FIXED or BOTH
+- The egg counter in the status line blinks when only 1 or 2 eggs are left
+- The version number is shown on the title screen
 
 ### Version 4 - 2026-10-10
 

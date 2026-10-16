@@ -4,8 +4,11 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 4
-'  2026-10-10
+'  Version 5
+'  2026-10-11
+'
+'  Written for QuickBASIC 4.5 (QB45); it also runs in QBasic 1.1 and QB64-PE.
+'  For detailed information, please refer to the README.md file.
 '===========================================================================
 
 DEFINT A-Z
@@ -35,23 +38,27 @@ DECLARE FUNCTION BannerRow$ (i)
 DECLARE FUNCTION BodyColor (a, idx)
 DECLARE FUNCTION CellBusy (rr, cc)
 DECLARE FUNCTION CleanName$ (n$, dflt$)
+DECLARE FUNCTION EggsReachable ()
+DECLARE FUNCTION MineSpotOk (r, c)
 DECLARE FUNCTION GameOverScreen ()
 DECLARE FUNCTION MainMenu ()
 DECLARE FUNCTION Num7$ (v&)
 DECLARE FUNCTION PointIsThere (row, col)
 DECLARE SUB AddScore (a, pts)
 DECLARE SUB ApplyTheme ()
-DECLARE SUB BlinkHearts ()
+DECLARE SUB BlinkHud ()
 DECLARE SUB Calibrate ()
 DECLARE SUB Center (row, text$, attr)
 DECLARE SUB ChangeSetting (sel, d)
 DECLARE SUB ClearScreen (attr)
+DECLARE SUB DeathAnim (a, variant)
 DECLARE SUB DelayMs (ms)
 DECLARE SUB Dialog (t1$, t2$, hint$)
 DECLARE SUB DrawBanner (row, phase, withShadow)
 DECLARE SUB DrawBox (r1, c1, r2, c2, attr)
 DECLARE SUB DrawCell (r, c)
 DECLARE SUB DrawHud ()
+DECLARE SUB DrawHudCenter (eggFg)
 DECLARE SUB DrawItems ()
 DECLARE SUB DrawMenu (sel)
 DECLARE SUB DrawMenuHint ()
@@ -59,12 +66,12 @@ DECLARE SUB EditName (who)
 DECLARE SUB EraseSnake (a)
 DECLARE SUB FillRect (r1, c1, r2, c2, ch, attr)
 DECLARE SUB FindCell (rr, cc)
-DECLARE SUB FlashSnake (a)
 DECLARE SUB Intro ()
 DECLARE SUB Level (what)
 DECLARE SUB LoadConfig ()
 DECLARE SUB LoadHigh ()
 DECLARE SUB PlaceEggs ()
+DECLARE SUB PlaceFixedMines ()
 DECLARE SUB PlayNibbles ()
 DECLARE SUB PutChar (row, col, ch, attr)
 DECLARE SUB PutPixel (row, col, c)
@@ -72,6 +79,7 @@ DECLARE SUB PutStr (row, col, s$, attr)
 DECLARE SUB QueueTurn (who, d)
 DECLARE SUB ReadKeys ()
 DECLARE SUB RedrawRows (r1, r2)
+DECLARE SUB RunBfs ()
 DECLARE SUB SaveConfig ()
 DECLARE SUB SaveHigh ()
 DECLARE SUB SetBlink (flag)
@@ -84,6 +92,7 @@ DECLARE SUB Tick ()
 DECLARE SUB Wall (row, col)
 
 '---- Constants ---------------------------------------------------------------
+CONST VERSIONTXT = "VERSION 5"
 CONST TRUE = -1
 CONST FALSE = 0
 CONST MAXSNAKELENGTH = 1000
@@ -94,10 +103,10 @@ CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGCHAR = 9         'character used for an egg
 CONST MAXLIVES = 9
+CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
 CONST SAMELEVEL = 2
 CONST NEXTLEVEL = 3
-CONST VERSIONTXT = "VERSION 4"   'shown on the title screen (update for every release)
 
 '---- Global variables --------------------------------------------------------
 'The playfield is 80 x 50 "pixels": every text character holds two pixels
@@ -106,18 +115,19 @@ DIM SHARED arena(1 TO 50, 1 TO 80)
 DIM SHARED sammy(1 TO 2) AS snakeType
 DIM SHARED sammyBody(0 TO MAXSNAKELENGTH - 1, 1 TO 2) AS snakeBody
 DIM SHARED qd(1 TO 2, 1 TO 3), qn(1 TO 2)       'buffered turns per snake
-DIM SHARED pal(1 TO 15)                           'colour table, see ApplyTheme
+DIM SHARED pal(1 TO 16)                           'colour table, see ApplyTheme
 DIM SHARED minRow(1 TO MAXMINE), minCol(1 TO MAXMINE), minTime(1 TO MAXMINE)
 DIM SHARED hitMine(1 TO 2)
 DIM SHARED eggRow(1 TO MAXEGG), eggCol(1 TO MAXEGG)
+DIM SHARED fxRow(1 TO MAXFIX), fxCol(1 TO MAXFIX)     'fixed mines
 DIM SHARED bfsDist(1 TO 50, 1 TO 80), bfsQ(0 TO 3999)   'path search for the heart
 DIM SHARED hiName$
 DIM SHARED nm$(1 TO 2)
 DIM SHARED vidSeg AS LONG
 DIM SHARED highScore AS LONG
 DIM SHARED loopsPerMs AS SINGLE
-DIM SHARED curLevel, numPlayers, speedSet, speedUp, startLevel, theme, soundOn, minesOn
-DIM SHARED bonRow, bonCol, bonOn, bonTime, eggLeft, eggTotal
+DIM SHARED curLevel, numPlayers, speedSet, speedUp, startLevel, theme, soundOn, mineMode
+DIM SHARED bonRow, bonCol, bonOn, bonTime, eggLeft, eggTotal, fxCount
 DIM SHARED heartOn, heartRow, heartCol, heartTime, heartMax, heartDone, tickCnt
 DIM SHARED newHigh, abortGame, anyDead, levelDone, stepMs
 DIM SHARED fileFail, fileBusy
@@ -136,7 +146,7 @@ DEF SEG
 
 nm$(1) = "SAMMY": nm$(2) = "JAKE"
 numPlayers = 1: speedSet = 5: speedUp = TRUE
-startLevel = 1: theme = 1: soundOn = TRUE: minesOn = TRUE
+startLevel = 1: theme = 1: soundOn = TRUE: mineMode = 4
 LoadConfig
 ApplyTheme
 LoadHigh
@@ -194,24 +204,24 @@ END SUB
 '   1 snake 1 body   2 snake 2 body   3 walls        4 background
 '   5 dialog text    6 dialog back    7 snake 1 head  8 snake 2 head
 '   9 number colour 10 bonus colour  11 status text  12 status back
-'  13 snake 1 stripe 14 snake 2 stripe 15 mine colour
+'  13 snake 1 stripe 14 snake 2 stripe 15 mine colour 16 egg count (status)
 SUB ApplyTheme
     SELECT CASE theme
         CASE 1                                  'Classic (blue)
             pal(1) = 14: pal(2) = 13: pal(3) = 12: pal(4) = 1
             pal(5) = 15: pal(6) = 4: pal(7) = 15: pal(8) = 15
             pal(9) = 15: pal(10) = 10: pal(11) = 15: pal(12) = 0
-            pal(13) = 6: pal(14) = 5: pal(15) = 12
+            pal(13) = 6: pal(14) = 5: pal(15) = 12: pal(16) = 14
         CASE 2                                  'Night (black)
             pal(1) = 10: pal(2) = 11: pal(3) = 9: pal(4) = 0
             pal(5) = 15: pal(6) = 1: pal(7) = 15: pal(8) = 15
             pal(9) = 14: pal(10) = 13: pal(11) = 15: pal(12) = 1
-            pal(13) = 2: pal(14) = 3: pal(15) = 12
+            pal(13) = 2: pal(14) = 3: pal(15) = 12: pal(16) = 14
         CASE ELSE                               'Mono
             pal(1) = 15: pal(2) = 7: pal(3) = 8: pal(4) = 0
             pal(5) = 0: pal(6) = 7: pal(7) = 7: pal(8) = 15
             pal(9) = 15: pal(10) = 15: pal(11) = 7: pal(12) = 0
-            pal(13) = 7: pal(14) = 7: pal(15) = 15
+            pal(13) = 7: pal(14) = 7: pal(15) = 15: pal(16) = 15
     END SELECT
 END SUB
 
@@ -246,15 +256,19 @@ FUNCTION BannerRow$ (i)
     END SELECT
 END FUNCTION
 
-'BlinkHearts:
-'  The heart of a player with only one life blinks in the status line
-SUB BlinkHearts
+'BlinkHud:
+'  Blinking parts of the status line: the heart of a player with only one
+'  life and the egg counter when only 1 or 2 eggs are left
+SUB BlinkHud
     hb = pal(12) * 16
     IF theme = 3 THEN hc = pal(11) ELSE hc = 12
     IF (tickCnt AND 4) = 0 THEN fc = hc ELSE fc = pal(12)
     IF sammy(1).lives = 1 THEN PutChar 1, 11, 3, fc + hb
     IF numPlayers = 2 THEN
         IF sammy(2).lives = 1 THEN PutChar 1, 66, 3, fc + hb
+    END IF
+    IF eggLeft >= 1 AND eggLeft <= 2 THEN
+        IF (tickCnt AND 4) = 0 THEN DrawHudCenter pal(16) ELSE DrawHudCenter pal(12)
     END IF
 END SUB
 
@@ -305,6 +319,9 @@ FUNCTION CellBusy (rr, cc)
             IF minRow(m) = rr AND minCol(m) = cc THEN CellBusy = TRUE
         END IF
     NEXT m
+    FOR m = 1 TO fxCount
+        IF fxRow(m) = rr AND fxCol(m) = cc THEN CellBusy = TRUE
+    NEXT m
 END FUNCTION
 
 'Center:
@@ -336,7 +353,9 @@ SUB ChangeSetting (sel, d)
         CASE 6
             soundOn = NOT soundOn
         CASE 7
-            minesOn = NOT minesOn
+            mineMode = mineMode + d
+            IF mineMode > 4 THEN mineMode = 1
+            IF mineMode < 1 THEN mineMode = 4
     END SELECT
 END SUB
 
@@ -358,6 +377,57 @@ END FUNCTION
 '  Clears the whole screen with the given attribute
 SUB ClearScreen (attr)
     FillRect 1, 1, 25, 80, 32, attr
+END SUB
+
+'DeathAnim:
+'  Death animation of snake a.  variant 1 = the two body shades blink
+'  away in turn, 2 = the snake is wiped out from the head to the tail,
+'  3 = both one after the other.
+SUB DeathAnim (a, variant)
+    IF variant = 1 THEN
+        fr = 6
+    ELSEIF variant = 3 THEN
+        fr = 4
+    ELSE
+        fr = 0
+    END IF
+
+    FOR f = 1 TO fr
+        FOR k = 0 TO sammy(a).count - 1
+            idx = (sammy(a).head - k + MAXSNAKELENGTH) MOD MAXSNAKELENGTH
+            IF k = 0 THEN
+                px = pal(6 + a)
+            ELSEIF idx AND 1 THEN
+                px = pal(a)
+            ELSE
+                px = pal(12 + a)
+            END IF
+            IF k > 0 THEN
+                IF f AND 1 THEN
+                    IF (idx AND 1) = 0 THEN px = pal(4)
+                ELSE
+                    IF (idx AND 1) = 1 THEN px = pal(4)
+                END IF
+            END IF
+            PutPixel sammyBody(idx, a).row, sammyBody(idx, a).col, px
+        NEXT k
+        DelayMs 90
+    NEXT f
+
+    IF variant <> 1 THEN
+        chunk = sammy(a).count \ 12 + 1
+        k = 0
+        DO WHILE k < sammy(a).count
+            FOR j = 1 TO chunk
+                IF k < sammy(a).count THEN
+                    idx = (sammy(a).head - k + MAXSNAKELENGTH) MOD MAXSNAKELENGTH
+                    PutPixel sammyBody(idx, a).row, sammyBody(idx, a).col, pal(4)
+                    k = k + 1
+                END IF
+            NEXT j
+            DelayMs 60
+        LOOP
+    END IF
 END SUB
 
 'DelayMs:
@@ -461,7 +531,7 @@ SUB DrawHud
     PutStr 1, 13, LTRIM$(STR$(lv)), pal(11) + hb
     PutStr 1, 16, Num7$(sammy(1).score), pal(11) + hb
 
-    Center 1, "LEVEL" + STR$(curLevel) + "   " + CHR$(EGGCHAR) + STR$(eggLeft) + "   HI " + Num7$(highScore), pal(11) + hb
+    DrawHudCenter pal(16)
 
     IF numPlayers = 2 THEN
         lv = sammy(2).lives
@@ -474,6 +544,20 @@ SUB DrawHud
     ELSE
         PutStr 1, 62, "P=Pause  ESC=Quit", pal(11) + hb
     END IF
+END SUB
+
+'DrawHudCenter:
+'  Middle of the status line: level, eggs left (colour eggFg), high score
+SUB DrawHudCenter (eggFg)
+    hb = pal(12) * 16
+    a$ = "LEVEL" + STR$(curLevel) + "   "
+    b$ = CHR$(EGGCHAR) + STR$(eggLeft)
+    c$ = "   HI " + Num7$(highScore)
+    sc = (80 - LEN(a$) - LEN(b$) - LEN(c$)) \ 2 + 1
+    FillRect 1, 24, 1, 57, 32, pal(11) + hb
+    PutStr 1, sc, a$, pal(11) + hb
+    PutStr 1, sc + LEN(a$), b$, eggFg + hb
+    PutStr 1, sc + LEN(a$) + LEN(b$), c$, pal(11) + hb
 END SUB
 
 'DrawItems:
@@ -489,6 +573,9 @@ SUB DrawItems
     END IF
     FOR m = 1 TO MAXMINE
         IF minTime(m) > 0 THEN PutChar minRow(m), minCol(m), MINECHAR, pal(15) + pal(4) * 16
+    NEXT m
+    FOR m = 1 TO fxCount
+        PutChar fxRow(m), fxCol(m), MINECHAR, pal(15) + pal(4) * 16
     NEXT m
 END SUB
 
@@ -530,7 +617,12 @@ SUB DrawMenu (sel)
             CASE 6
                 IF soundOn THEN v$ = "ON" ELSE v$ = "OFF"
             CASE 7
-                IF minesOn THEN v$ = "ON" ELSE v$ = "OFF"
+                SELECT CASE mineMode
+                    CASE 1: v$ = "OFF"
+                    CASE 2: v$ = "RANDOM"
+                    CASE 3: v$ = "FIXED"
+                    CASE ELSE: v$ = "BOTH"
+                END SELECT
             CASE 8
                 v$ = nm$(1)
             CASE 9
@@ -600,6 +692,17 @@ SUB EditName (who)
     IF NOT cancelled THEN nm$(who) = CleanName$(n$, dflt$)
 END SUB
 
+'EggsReachable:
+'  TRUE if a snake head can reach every egg (uses the result of RunBfs)
+FUNCTION EggsReachable
+    EggsReachable = TRUE
+    FOR e = 1 TO eggTotal
+        IF eggRow(e) > 0 THEN
+            IF bfsDist(eggRow(e) * 2 - 1, eggCol(e)) < 0 AND bfsDist(eggRow(e) * 2, eggCol(e)) < 0 THEN EggsReachable = FALSE
+        END IF
+    NEXT e
+END FUNCTION
+
 'EraseSnake:
 '  Removes a snake from the screen
 SUB EraseSnake (a)
@@ -640,19 +743,6 @@ SUB FindCell (rr, cc)
             IF CellBusy(rr, cc) THEN ok = FALSE
         END IF
     LOOP UNTIL ok OR tries > 2000
-END SUB
-
-'FlashSnake:
-'  Death animation: the snake flashes white
-SUB FlashSnake (a)
-    FOR f = 1 TO 6
-        IF f AND 1 THEN fc = 15 ELSE fc = pal(a)
-        FOR k = 0 TO sammy(a).count - 1
-            idx = (sammy(a).head - k + MAXSNAKELENGTH) MOD MAXSNAKELENGTH
-            PutPixel sammyBody(idx, a).row, sammyBody(idx, a).col, fc
-        NEXT k
-        DelayMs 70
-    NEXT f
 END SUB
 
 'GameOverScreen:
@@ -708,10 +798,7 @@ END FUNCTION
 SUB Intro
     ClearScreen 7
     DrawBanner 3, 0, TRUE
-    t$ = "D E L U X E   E D I T I O N"
-    c0 = (80 - LEN(t$) - 4 - LEN(VERSIONTXT)) \ 2 + 1
-    PutStr 10, c0, t$, 14
-    PutStr 10, c0 + LEN(t$) + 4, VERSIONTXT, 15
+    Center 10, "D E L U X E   E D I T I O N   -   " + VERSIONTXT, 14
     Center 11, "based on Microsoft QBasic Nibbles (C) 1990", 8
 
     Center 13, "Steer your snake around the arena and collect all the eggs to", 7
@@ -924,7 +1011,14 @@ SUB Level (what)
     FOR m = 1 TO MAXMINE
         minTime(m) = 0
     NEXT m
+    IF what <> SAMELEVEL THEN fxCount = 0       'same level again: same fixed mines
     PlaceEggs
+    IF fxCount = 0 THEN
+        PlaceFixedMines
+    ELSE
+        RunBfs
+        IF NOT EggsReachable THEN PlaceFixedMines
+    END IF
     RedrawRows 2, 25
 END SUB
 
@@ -949,7 +1043,13 @@ SUB LoadConfig
                     IF sl >= 1 AND sl <= NUMLEVELS THEN startLevel = sl
                     IF th >= 1 AND th <= 3 THEN theme = th
                     soundOn = (so <> 0)
-                    minesOn = (mo <> 0)
+                    IF mo >= 1 AND mo <= 4 THEN
+                        mineMode = mo
+                    ELSEIF mo <> 0 THEN
+                        mineMode = 4
+                    ELSE
+                        mineMode = 1
+                    END IF
                 END IF
             END IF
             CLOSE #1
@@ -1027,6 +1127,32 @@ FUNCTION MainMenu
     LOOP
 END FUNCTION
 
+'MineSpotOk:
+'  TRUE if a fixed mine may be placed on text cell (r, c): free, open
+'  space around it, far from the snake heads, not next to another mine
+FUNCTION MineSpotOk (r, c)
+    MineSpotOk = FALSE
+    IF r < 2 OR r > 25 OR c < 2 OR c > 79 THEN EXIT FUNCTION
+    IF CellBusy(r, c) THEN EXIT FUNCTION
+    FOR pr = r * 2 - 3 TO r * 2 + 2
+        FOR px = c - 2 TO c + 2
+            IF pr < 3 OR pr > 50 OR px < 1 OR px > 80 THEN EXIT FUNCTION
+            IF arena(pr, px) <> pal(4) THEN EXIT FUNCTION
+        NEXT px
+    NEXT pr
+    FOR a = 1 TO numPlayers
+        dx = ABS(c - sammy(a).col)
+        dy = ABS(r * 2 - sammy(a).row)
+        dy2 = ABS(r * 2 - 1 - sammy(a).row)
+        IF dy2 < dy THEN dy = dy2
+        IF dx <= 10 AND dy <= 10 THEN EXIT FUNCTION
+    NEXT a
+    FOR k = 1 TO fxCount
+        IF ABS(c - fxCol(k)) <= 3 AND ABS(r - fxRow(k)) <= 2 THEN EXIT FUNCTION
+    NEXT k
+    MineSpotOk = TRUE
+END FUNCTION
+
 'Num7$:
 '  Number as a right aligned string of 7 characters
 FUNCTION Num7$ (v&)
@@ -1059,6 +1185,48 @@ SUB PlaceEggs
         eggRow(e) = r
         eggCol(e) = c
     NEXT e
+END SUB
+
+'PlaceFixedMines:
+'  Puts the permanent mines of a level (menu modes FIXED and BOTH).  With
+'  two players they come in point symmetric pairs.  Afterwards a path
+'  search checks that every egg can still be reached.
+SUB PlaceFixedMines
+    fxCount = 0
+    IF mineMode < 3 THEN EXIT SUB
+    want = curLevel \ 2
+    IF want > 6 THEN want = 6
+    IF want < 1 THEN EXIT SUB
+    IF numPlayers = 2 THEN want = ((want + 1) \ 2) * 2
+
+    FOR attempt = 1 TO 3
+        fxCount = 0
+        tries = 0
+        DO WHILE fxCount < want AND tries < 400
+            tries = tries + 1
+            FindCell r, c
+            IF MineSpotOk(r, c) THEN
+                fxCount = fxCount + 1
+                fxRow(fxCount) = r
+                fxCol(fxCount) = c
+                IF numPlayers = 2 THEN
+                    r2 = 27 - r
+                    c2 = 81 - c
+                    IF MineSpotOk(r2, c2) THEN
+                        fxCount = fxCount + 1
+                        fxRow(fxCount) = r2
+                        fxCol(fxCount) = c2
+                    ELSE
+                        fxCount = fxCount - 1
+                    END IF
+                END IF
+            END IF
+        LOOP
+        IF fxCount = 0 THEN EXIT SUB
+        RunBfs
+        IF EggsReachable THEN EXIT SUB
+    NEXT attempt
+    fxCount = 0
 END SUB
 
 'PlayNibbles:
@@ -1104,8 +1272,9 @@ SUB PlayNibbles
             FOR a = 1 TO numPlayers
                 IF NOT sammy(a).alive THEN sammy(a).lives = sammy(a).lives - 1
             NEXT a
+            variant = INT(RND * 3) + 1
             FOR a = 1 TO numPlayers
-                IF NOT sammy(a).alive THEN FlashSnake a
+                IF NOT sammy(a).alive THEN DeathAnim a, variant
             NEXT a
             FOR a = 1 TO numPlayers
                 EraseSnake a
@@ -1260,6 +1429,65 @@ SUB RedrawRows (r1, r2)
     DrawItems
 END SUB
 
+'RunBfs:
+'  Path search from the heads of the living snakes over the empty pixels.
+'  bfsDist() = steps from the nearest head, -1 = not reachable,
+'  -2 = blocked by a mine.
+SUB RunBfs
+    FOR r = 1 TO 50
+        FOR c = 1 TO 80
+            bfsDist(r, c) = -1
+        NEXT c
+    NEXT r
+    FOR m = 1 TO MAXMINE
+        IF minTime(m) > 0 THEN
+            bfsDist(minRow(m) * 2 - 1, minCol(m)) = -2
+            bfsDist(minRow(m) * 2, minCol(m)) = -2
+        END IF
+    NEXT m
+    FOR m = 1 TO fxCount
+        bfsDist(fxRow(m) * 2 - 1, fxCol(m)) = -2
+        bfsDist(fxRow(m) * 2, fxCol(m)) = -2
+    NEXT m
+
+    qh = 0
+    qt = 0
+    FOR a = 1 TO numPlayers
+        IF sammy(a).alive THEN
+            bfsDist(sammy(a).row, sammy(a).col) = 0
+            bfsQ(qt) = (sammy(a).row - 1) * 80 + sammy(a).col - 1
+            qt = qt + 1
+        END IF
+    NEXT a
+
+    DO WHILE qh < qt
+        cur = bfsQ(qh)
+        qh = qh + 1
+        r = cur \ 80 + 1
+        c = cur MOD 80 + 1
+        d = bfsDist(r, c) + 1
+        FOR k = 1 TO 4
+            nr = r
+            nc = c
+            SELECT CASE k
+                CASE 1: nr = r - 1
+                CASE 2: nr = r + 1
+                CASE 3: nc = c - 1
+                CASE ELSE: nc = c + 1
+            END SELECT
+            IF nr >= 3 AND nr <= 50 AND nc >= 1 AND nc <= 80 THEN
+                IF bfsDist(nr, nc) = -1 THEN
+                    IF arena(nr, nc) = pal(4) THEN
+                        bfsDist(nr, nc) = d
+                        bfsQ(qt) = (nr - 1) * 80 + nc - 1
+                        qt = qt + 1
+                    END IF
+                END IF
+            END IF
+        NEXT k
+    LOOP
+END SUB
+
 'SaveConfig:
 '  Writes names and menu settings to NIBBLES.CFG
 SUB SaveConfig
@@ -1267,7 +1495,7 @@ SUB SaveConfig
     fileBusy = TRUE
     OPEN "NIBBLES.CFG" FOR OUTPUT AS #1
     IF NOT fileFail THEN
-        WRITE #1, nm$(1), nm$(2), numPlayers, speedSet, speedUp, startLevel, theme, soundOn, minesOn
+        WRITE #1, nm$(1), nm$(2), numPlayers, speedSet, speedUp, startLevel, theme, soundOn, mineMode
         CLOSE #1
     END IF
     fileBusy = FALSE
@@ -1363,47 +1591,7 @@ END SUB
 '  Puts the heart on the reachable cell that is farthest (by real path
 '  length) from the snakes.  The time limit follows from that distance.
 SUB SpawnHeart
-    FOR r = 1 TO 50
-        FOR c = 1 TO 80
-            bfsDist(r, c) = -1
-        NEXT c
-    NEXT r
-    qh = 0
-    qt = 0
-    FOR a = 1 TO numPlayers
-        IF sammy(a).alive THEN
-            bfsDist(sammy(a).row, sammy(a).col) = 0
-            bfsQ(qt) = (sammy(a).row - 1) * 80 + sammy(a).col - 1
-            qt = qt + 1
-        END IF
-    NEXT a
-
-    DO WHILE qh < qt
-        cur = bfsQ(qh)
-        qh = qh + 1
-        r = cur \ 80 + 1
-        c = cur MOD 80 + 1
-        d = bfsDist(r, c) + 1
-        FOR k = 1 TO 4
-            nr = r
-            nc = c
-            SELECT CASE k
-                CASE 1: nr = r - 1
-                CASE 2: nr = r + 1
-                CASE 3: nc = c - 1
-                CASE ELSE: nc = c + 1
-            END SELECT
-            IF nr >= 3 AND nr <= 50 AND nc >= 1 AND nc <= 80 THEN
-                IF bfsDist(nr, nc) < 0 THEN
-                    IF arena(nr, nc) = pal(4) THEN
-                        bfsDist(nr, nc) = d
-                        bfsQ(qt) = (nr - 1) * 80 + nc - 1
-                        qt = qt + 1
-                    END IF
-                END IF
-            END IF
-        NEXT k
-    LOOP
+    RunBfs
 
     best = -1
     bestR = 0
@@ -1478,7 +1666,7 @@ END SUB
 '  One step of the game: timers, move all snakes, collisions, eating
 SUB Tick
     tickCnt = (tickCnt + 1) AND 255
-    IF (tickCnt AND 3) = 0 THEN BlinkHearts
+    IF (tickCnt AND 3) = 0 THEN BlinkHud
 
     'the bonus diamond flashes and disappears after a while
     IF bonOn THEN
@@ -1567,6 +1755,12 @@ SUB Tick
                 END IF
             END IF
         NEXT m
+        FOR m = 1 TO fxCount
+            IF fxRow(m) = rr AND fxCol(m) = c THEN
+                dead = TRUE
+                hitMine(a) = TRUE
+            END IF
+        NEXT m
 
         IF dead THEN
             sammy(a).alive = FALSE
@@ -1605,7 +1799,7 @@ SUB Tick
                         IF NOT bonOn THEN
                             IF INT(RND * 3) = 0 THEN SpawnBonus
                         END IF
-                        IF minesOn THEN
+                        IF mineMode = 2 OR mineMode = 4 THEN
                             IF INT(RND * 3) = 0 THEN SpawnMine
                         END IF
                         IF eggLeft = 1 AND NOT heartDone THEN SpawnHeart
