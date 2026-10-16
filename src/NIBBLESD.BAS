@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 5
-'  2026-10-11
+'  Version 6
+'  2026-10-12
 '
 '  Written for QuickBASIC 4.5 (QB45); it also runs in QBasic 1.1 and QB64-PE.
 '  For detailed information, please refer to the README.md file.
@@ -38,8 +38,12 @@ DECLARE FUNCTION BannerRow$ (i)
 DECLARE FUNCTION BodyColor (a, idx)
 DECLARE FUNCTION CellBusy (rr, cc)
 DECLARE FUNCTION CleanName$ (n$, dflt$)
+DECLARE FUNCTION DoorFree (mask)
+DECLARE FUNCTION DoorPass (row)
+DECLARE FUNCTION DoorTicks (ms)
 DECLARE FUNCTION EggsReachable ()
 DECLARE FUNCTION MineSpotOk (r, c)
+DECLARE FUNCTION TryChooseDoor ()
 DECLARE FUNCTION GameOverScreen ()
 DECLARE FUNCTION MainMenu ()
 DECLARE FUNCTION Num7$ (v&)
@@ -53,6 +57,10 @@ DECLARE SUB ChangeSetting (sel, d)
 DECLARE SUB ClearScreen (attr)
 DECLARE SUB DeathAnim (a, variant)
 DECLARE SUB DelayMs (ms)
+DECLARE SUB DoorBlink (kind, flag)
+DECLARE SUB DoorReset ()
+DECLARE SUB DoorSet (k, c)
+DECLARE SUB DoorTick ()
 DECLARE SUB Dialog (t1$, t2$, hint$)
 DECLARE SUB DrawBanner (row, phase, withShadow)
 DECLARE SUB DrawBox (r1, c1, r2, c2, attr)
@@ -92,7 +100,6 @@ DECLARE SUB Tick ()
 DECLARE SUB Wall (row, col)
 
 '---- Constants ---------------------------------------------------------------
-CONST VERSIONTXT = "VERSION 5"
 CONST TRUE = -1
 CONST FALSE = 0
 CONST MAXSNAKELENGTH = 1000
@@ -102,6 +109,7 @@ CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGCHAR = 9         'character used for an egg
+CONST VERSIONTXT = "VERSION 6"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -126,9 +134,10 @@ DIM SHARED nm$(1 TO 2)
 DIM SHARED vidSeg AS LONG
 DIM SHARED highScore AS LONG
 DIM SHARED loopsPerMs AS SINGLE
-DIM SHARED curLevel, numPlayers, speedSet, speedUp, startLevel, theme, soundOn, mineMode
+DIM SHARED curLevel, numPlayers, speedSet, speedUp, startLevel, theme, soundOn, mineMode, doorsOn
 DIM SHARED bonRow, bonCol, bonOn, bonTime, eggLeft, eggTotal, fxCount
 DIM SHARED heartOn, heartRow, heartCol, heartTime, heartMax, heartDone, tickCnt
+DIM SHARED doorState, doorTimer, doorRow          'side doors
 DIM SHARED newHigh, abortGame, anyDead, levelDone, stepMs
 DIM SHARED fileFail, fileBusy
 
@@ -146,7 +155,7 @@ DEF SEG
 
 nm$(1) = "SAMMY": nm$(2) = "JAKE"
 numPlayers = 1: speedSet = 5: speedUp = TRUE
-startLevel = 1: theme = 1: soundOn = TRUE: mineMode = 4
+startLevel = 1: theme = 1: soundOn = TRUE: mineMode = 4: doorsOn = TRUE
 LoadConfig
 ApplyTheme
 LoadHigh
@@ -322,6 +331,11 @@ FUNCTION CellBusy (rr, cc)
     FOR m = 1 TO fxCount
         IF fxRow(m) = rr AND fxCol(m) = cc THEN CellBusy = TRUE
     NEXT m
+    IF doorState > 0 THEN                       'keep the door lanes free
+        IF rr >= doorRow AND rr <= doorRow + 3 THEN
+            IF cc <= 7 OR cc >= 74 THEN CellBusy = TRUE
+        END IF
+    END IF
 END FUNCTION
 
 'Center:
@@ -356,6 +370,8 @@ SUB ChangeSetting (sel, d)
             mineMode = mineMode + d
             IF mineMode > 4 THEN mineMode = 1
             IF mineMode < 1 THEN mineMode = 4
+        CASE 8
+            doorsOn = NOT doorsOn
     END SELECT
 END SUB
 
@@ -460,6 +476,149 @@ SUB Dialog (t1$, t2$, hint$)
     LOOP UNTIL k$ = " " OR k$ = CHR$(13)
     RedrawRows 7, 13
 END SUB
+
+'DoorBlink:
+'  Blink effect on the door cells (only drawn on the screen, the arena is
+'  not changed).  kind 1 = solid block on the closed door, 2 = shaded block
+'  in the open gap.  flag FALSE restores the normal picture.
+SUB DoorBlink (kind, flag)
+    IF kind = 1 THEN ch = 219 ELSE ch = 177
+    FOR k = 0 TO 3
+        r = doorRow + k
+        FOR side = 1 TO 2
+            IF side = 1 THEN cl = 1 ELSE cl = 80
+            IF flag THEN
+                t = arena(r * 2 - 1, cl)
+                b = arena(r * 2, cl)
+                IF t = b THEN
+                    IF t = pal(3) OR t = pal(4) THEN PutChar r, cl, ch, pal(9) + pal(4) * 16
+                END IF
+            ELSE
+                DrawCell r, cl
+            END IF
+        NEXT side
+    NEXT k
+END SUB
+
+'DoorFree:
+'  TRUE if no snake is inside the door cells selected by mask
+'  (bits: 1 = cell 0, 2 = cell 1, 4 = cell 2, 8 = cell 3)
+FUNCTION DoorFree (mask)
+    DoorFree = TRUE
+    FOR k = 0 TO 3
+        bit = 2 ^ k
+        IF mask AND bit THEN
+            r = doorRow + k
+            IF arena(r * 2 - 1, 1) <> pal(4) OR arena(r * 2, 1) <> pal(4) THEN DoorFree = FALSE
+            IF arena(r * 2 - 1, 80) <> pal(4) OR arena(r * 2, 80) <> pal(4) THEN DoorFree = FALSE
+        END IF
+    NEXT k
+END FUNCTION
+
+'DoorPass:
+'  TRUE if a snake may wrap around on this pixel row (door is not closed)
+FUNCTION DoorPass (row)
+    DoorPass = FALSE
+    IF doorState >= 2 THEN
+        IF row >= doorRow * 2 - 1 AND row <= (doorRow + 3) * 2 THEN DoorPass = TRUE
+    END IF
+END FUNCTION
+
+'DoorReset:
+'  Closes the doors and starts the waiting time (new round)
+SUB DoorReset
+    doorState = 0
+    doorTimer = DoorTicks(10000 + INT(RND * 15000))
+END SUB
+
+'DoorSet:
+'  Sets the four pixels of door cell k (both walls) to colour c
+SUB DoorSet (k, c)
+    r = doorRow + k
+    PutPixel r * 2 - 1, 1, c
+    PutPixel r * 2, 1, c
+    PutPixel r * 2 - 1, 80, c
+    PutPixel r * 2, 80, c
+END SUB
+
+'DoorTick:
+'  State machine of the side doors, called once per game step.
+'  0 closed and waiting   1 blinking before opening   2 half open
+'  3 open                 4 blinking before closing   5 half closed
+SUB DoorTick
+    SELECT CASE doorState
+        CASE 0
+            doorTimer = doorTimer - 1
+            IF doorTimer <= 0 THEN
+                IF TryChooseDoor THEN
+                    doorState = 1
+                    doorTimer = DoorTicks(1500)
+                    Sfx 9
+                ELSE
+                    doorTimer = DoorTicks(3000)
+                END IF
+            END IF
+        CASE 1
+            doorTimer = doorTimer - 1
+            IF doorTimer <= 0 THEN
+                DoorBlink 1, FALSE
+                DoorSet 0, pal(4)
+                DoorSet 2, pal(4)
+                doorState = 2
+                doorTimer = DoorTicks(250)
+            ELSE
+                DoorBlink 1, (doorTimer \ 2) AND 1
+            END IF
+        CASE 2
+            doorTimer = doorTimer - 1
+            IF doorTimer <= 0 THEN
+                DoorSet 1, pal(4)
+                DoorSet 3, pal(4)
+                doorState = 3
+                doorTimer = DoorTicks(10000)
+            END IF
+        CASE 3
+            doorTimer = doorTimer - 1
+            IF doorTimer <= 0 THEN
+                doorState = 4
+                doorTimer = DoorTicks(1500)
+                Sfx 9
+            END IF
+        CASE 4
+            IF doorTimer > 0 THEN doorTimer = doorTimer - 1
+            IF doorTimer > 0 THEN
+                DoorBlink 2, (doorTimer \ 2) AND 1
+            ELSEIF DoorFree(15) THEN
+                DoorBlink 2, FALSE
+                DoorSet 1, pal(3)
+                DoorSet 3, pal(3)
+                doorState = 5
+                doorTimer = DoorTicks(250)
+            ELSE
+                DoorBlink 2, (tickCnt \ 2) AND 1      'a snake is inside: wait
+            END IF
+        CASE 5
+            IF doorTimer > 0 THEN doorTimer = doorTimer - 1
+            IF doorTimer <= 0 THEN
+                IF DoorFree(5) THEN
+                    DoorSet 0, pal(3)
+                    DoorSet 2, pal(3)
+                    doorState = 0
+                    doorTimer = DoorTicks(10000 + INT(RND * 15000))
+                END IF
+            END IF
+    END SELECT
+END SUB
+
+'DoorTicks:
+'  Converts milliseconds to game steps
+FUNCTION DoorTicks (ms)
+    s = stepMs
+    IF s < 8 THEN s = 8
+    t = ms \ s
+    IF t < 2 THEN t = 2
+    DoorTicks = t
+END FUNCTION
 
 'DrawBanner:
 '  Draws the big NIBBLES logo.  phase shifts the colours (animation)
@@ -582,9 +741,8 @@ END SUB
 'DrawMenu:
 '  Draws the settings menu, sel is the highlighted line
 SUB DrawMenu (sel)
-    FOR i = 1 TO 11
+    FOR i = 1 TO 12
         r = 10 + i
-        IF i >= 10 THEN r = r + 1
         IF i = sel THEN attr = 0 + 7 * 16 ELSE attr = 7
         FillRect r, 19, r, 62, 32, attr
         SELECT CASE i
@@ -595,8 +753,9 @@ SUB DrawMenu (sel)
             CASE 5: lab$ = "Colors"
             CASE 6: lab$ = "Sound"
             CASE 7: lab$ = "Mines"
-            CASE 8: lab$ = "Player 1 name"
-            CASE 9: lab$ = "Player 2 name"
+            CASE 8: lab$ = "Doors"
+            CASE 9: lab$ = "Player 1 name"
+            CASE 10: lab$ = "Player 2 name"
             CASE ELSE: lab$ = ""
         END SELECT
         SELECT CASE i
@@ -624,16 +783,18 @@ SUB DrawMenu (sel)
                     CASE ELSE: v$ = "BOTH"
                 END SELECT
             CASE 8
-                v$ = nm$(1)
+                IF doorsOn THEN v$ = "ON" ELSE v$ = "OFF"
             CASE 9
+                v$ = nm$(1)
+            CASE 10
                 v$ = nm$(2)
             CASE ELSE
                 v$ = ""
         END SELECT
-        IF i <= 9 THEN
+        IF i <= 10 THEN
             PutStr r, 22, lab$, attr
             IF i = sel THEN
-                IF i >= 8 THEN
+                IF i >= 9 THEN
                     v$ = v$ + "  [ENTER]"
                 ELSE
                     v$ = CHR$(17) + " " + v$ + " " + CHR$(16)
@@ -642,7 +803,7 @@ SUB DrawMenu (sel)
             ELSE
                 PutStr r, 44, v$, 15
             END IF
-        ELSEIF i = 10 THEN
+        ELSEIF i = 11 THEN
             Center r, "S T A R T   G A M E", attr
         ELSE
             Center r, "Q U I T", attr
@@ -661,10 +822,10 @@ END SUB
 '  Lets the user type a new name for player who (1 or 2)
 SUB EditName (who)
     IF who = 1 THEN
-        r = 18
+        r = 19
         dflt$ = "SAMMY"
     ELSE
-        r = 19
+        r = 20
         dflt$ = "JAKE"
     END IF
     FillRect 24, 1, 24, 80, 32, 7
@@ -805,6 +966,7 @@ SUB Intro
     Center 14, "finish a level.  Every egg makes you longer and scores 100 points.", 7
     Center 15, "Catch the flashing diamond for a bonus and the heart for an extra life!", 7
     Center 16, "Avoid walls, the other snake, your own tail and the red mines.", 7
+    Center 17, "Side doors open now and then - go through and exit on the other side!", 7
 
     Center 18, "PLAYER 1  -  arrow keys  (or keypad 8 2 4 6)", 11
     Center 19, "PLAYER 2  -  W A S D     (W A S D also work in 1 player mode)", 13
@@ -1011,6 +1173,7 @@ SUB Level (what)
     FOR m = 1 TO MAXMINE
         minTime(m) = 0
     NEXT m
+    doorState = 0
     IF what <> SAMELEVEL THEN fxCount = 0       'same level again: same fixed mines
     PlaceEggs
     IF fxCount = 0 THEN
@@ -1050,6 +1213,10 @@ SUB LoadConfig
                     ELSE
                         mineMode = 1
                     END IF
+                    IF NOT EOF(1) THEN
+                        INPUT #1, dr
+                        IF NOT fileFail THEN doorsOn = (dr <> 0)
+                    END IF
                 END IF
             END IF
             CLOSE #1
@@ -1088,7 +1255,7 @@ FUNCTION MainMenu
     DrawMenuHint
     Center 25, "High score:" + STR$(highScore) + "  " + hiName$, 14
 
-    sel = 10
+    sel = 11
     DO
         DrawMenu sel
         DO
@@ -1097,27 +1264,27 @@ FUNCTION MainMenu
         SELECT CASE k$
             CASE CHR$(0) + "H"
                 sel = sel - 1
-                IF sel < 1 THEN sel = 11
+                IF sel < 1 THEN sel = 12
             CASE CHR$(0) + "P"
                 sel = sel + 1
-                IF sel > 11 THEN sel = 1
+                IF sel > 12 THEN sel = 1
             CASE CHR$(0) + "K"
                 ChangeSetting sel, -1
             CASE CHR$(0) + "M"
                 ChangeSetting sel, 1
             CASE " "
-                IF sel <= 7 THEN
+                IF sel <= 8 THEN
                     ChangeSetting sel, 1
-                ELSEIF sel = 8 OR sel = 9 THEN
-                    EditName sel - 7
+                ELSEIF sel = 9 OR sel = 10 THEN
+                    EditName sel - 8
                     DrawMenuHint
                 END IF
             CASE CHR$(13)
-                IF sel = 8 OR sel = 9 THEN
-                    EditName sel - 7
+                IF sel = 9 OR sel = 10 THEN
+                    EditName sel - 8
                     DrawMenuHint
                 ELSE
-                    IF sel = 11 THEN MainMenu = FALSE ELSE MainMenu = TRUE
+                    IF sel = 12 THEN MainMenu = FALSE ELSE MainMenu = TRUE
                     EXIT DO
                 END IF
             CASE CHR$(27)
@@ -1252,6 +1419,7 @@ SUB PlayNibbles
         stepMs = 180 - speedSet * 16
         IF speedUp THEN stepMs = INT(stepMs * .93 ^ (curLevel - startLevel))
         IF stepMs < 8 THEN stepMs = 8
+        DoorReset
 
         bonOn = FALSE
         hitMine(1) = FALSE
@@ -1496,6 +1664,7 @@ SUB SaveConfig
     OPEN "NIBBLES.CFG" FOR OUTPUT AS #1
     IF NOT fileFail THEN
         WRITE #1, nm$(1), nm$(2), numPlayers, speedSet, speedUp, startLevel, theme, soundOn, mineMode
+        WRITE #1, doorsOn
         CLOSE #1
     END IF
     fileBusy = FALSE
@@ -1539,6 +1708,7 @@ SUB Sfx (n)
         CASE 6: PLAY "MBT200O1L32DC"                    'mine appears
         CASE 7: PLAY "MBT220O2L32GBGB"                  'heart appears
         CASE 8: PLAY "MBT180O3L16CEGB>CE"               'heart caught
+        CASE 9: PLAY "MBT200O2L32CEC"                   'door warning
     END SELECT
 END SUB
 
@@ -1667,6 +1837,7 @@ END SUB
 SUB Tick
     tickCnt = (tickCnt + 1) AND 255
     IF (tickCnt AND 3) = 0 THEN BlinkHud
+    IF doorsOn THEN DoorTick
 
     'the bonus diamond flashes and disappears after a while
     IF bonOn THEN
@@ -1734,6 +1905,12 @@ SUB Tick
             CASE 3: sammy(a).col = sammy(a).col - 1
             CASE ELSE: sammy(a).col = sammy(a).col + 1
         END SELECT
+        'through an open side door to the other side of the arena
+        IF sammy(a).col < 1 THEN
+            IF DoorPass(sammy(a).row) THEN sammy(a).col = 80
+        ELSEIF sammy(a).col > 80 THEN
+            IF DoorPass(sammy(a).row) THEN sammy(a).col = 1
+        END IF
     NEXT a
 
     'phase 2: collisions, drawing, eating
@@ -1827,6 +2004,38 @@ SUB Tick
         END IF
     NEXT a
 END SUB
+
+'TryChooseDoor:
+'  Picks a row for the next door pair.  The lanes in front of both doors
+'  must be empty (no wall, snake, item or mine).  FALSE if none was found.
+FUNCTION TryChooseDoor
+    TryChooseDoor = FALSE
+    FOR attempt = 1 TO 30
+        r = INT(RND * 19) + 3
+        ok = TRUE
+        FOR pr = r * 2 - 1 TO (r + 3) * 2
+            FOR px = 2 TO 4
+                IF arena(pr, px) <> pal(4) THEN ok = FALSE
+            NEXT px
+            FOR px = 77 TO 79
+                IF arena(pr, px) <> pal(4) THEN ok = FALSE
+            NEXT px
+        NEXT pr
+        FOR k = 0 TO 3
+            FOR cc = 2 TO 7
+                IF CellBusy(r + k, cc) THEN ok = FALSE
+            NEXT cc
+            FOR cc = 74 TO 79
+                IF CellBusy(r + k, cc) THEN ok = FALSE
+            NEXT cc
+        NEXT k
+        IF ok THEN
+            doorRow = r
+            TryChooseDoor = TRUE
+            EXIT FUNCTION
+        END IF
+    NEXT attempt
+END FUNCTION
 
 'Wall:
 '  Marks a pixel as wall (the screen is drawn later by RedrawRows)

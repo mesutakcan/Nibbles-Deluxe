@@ -23,7 +23,7 @@ always called `NIBBLESD.BAS`.
 ## Features
 
 - Direct video memory graphics: fast, flicker free, exact colours
-- Settings menu: players, speed, colour theme, start level, sound, mines, player names
+- Settings menu: players, speed, colour theme, start level, sound, mines, doors, player names
 - Three colour themes: Classic, Night, Mono
 - Animated title screen with a big logo
 - Eggs to collect on every level (8 + level number, at most 25)
@@ -34,6 +34,7 @@ always called `NIBBLESD.BAS`.
   (the game checks that every egg stays reachable); mode OFF / RANDOM / FIXED / BOTH
 - Three death animations, chosen at random
 - The egg counter in the status line blinks when only 1 or 2 eggs are left
+- Side doors: now and then the walls open on both sides; go through one and come out on the other side
 - Turn buffer: fast key presses are never lost, and a snake can no longer reverse into itself
 - Flashing bonus diamonds and a bonus for completing a level
 - Lives that really count down (the heart in the status line blinks on the last life),
@@ -134,6 +135,12 @@ snakes die.
   wins.
 - **Speed**: gets about 7 percent faster with every level (can be switched off).
 
+**Side doors** open now and then in the left and right walls (a gap four text rows high). They
+blink twice as a warning, open and stay open for about 10 seconds, then blink again and close.
+A snake that enters an open door leaves the arena on the other side, like in Pac-Man. The doors
+never open in front of walls, snakes, eggs or mines, and they wait to close while a snake is
+still inside the gap. They can be switched off with the **Doors** setting.
+
 If a snake crashes, the level starts again with the same walls. Red mines may appear
 randomly after an egg is eaten. There can be up to three mines on screen at once, never
 close to a snake head; each flashes and disappears after about 12 seconds. Hitting one costs
@@ -164,6 +171,7 @@ box with four gates and level 12 is a big plus sign. After level 12 the levels s
 | Colors | CLASSIC, NIGHT, MONO |
 | Sound | ON / OFF |
 | Mines | OFF, RANDOM, FIXED, BOTH |
+| Doors | ON / OFF |
 | Player 1 name | up to 8 characters (default SAMMY) |
 | Player 2 name | up to 8 characters (default JAKE) |
 
@@ -176,7 +184,7 @@ the game starts.
 
 | File | Content |
 | --- | --- |
-| `NIBBLES.CFG` | The player names and all menu settings |
+| `NIBBLES.CFG` | The player names and all menu settings (including Doors) |
 | `NIBBLES.HI` | The high score and the name of its owner |
 
 Both files are written to the current directory and keep these names in every version,
@@ -251,6 +259,15 @@ Instead of the command line you can also open `NIBBLESD.BAS` in the QB64-PE edit
 ## History
 
 Newest version first.
+
+### Version 6 - 2026-10-12
+
+- New **side doors**: gaps open in the left and right walls now and then; a snake that goes
+  through leaves on the opposite side (warning blink before opening and closing, a door never
+  closes on a snake)
+- New **Doors** setting (ON / OFF), saved in `NIBBLES.CFG`
+- Items and mines are never placed in the door lanes while a door is active
+- The intro text explains the doors
 
 ### Version 5 - 2026-10-11
 
