@@ -1,6 +1,6 @@
 # Nibbles Deluxe
 
-[![Language](https://img.shields.io/badge/Language-QuickBasic-blue.svg)](https://en.wikipedia.org/wiki/QBasic)
+[![Language](https://img.shields.io/badge/Language-QuickBasic-blue.svg)](https://en.wikipedia.org/wiki/QuickBASIC)
 [![Platform](https://img.shields.io/badge/Platform-DOS%20%7C%20Windows-lightgrey.svg)](https://www.dosbox.com/)
 [![GitHub stars](https://img.shields.io/github/stars/mesutakcan/Nibbles-Deluxe?style=social)](https://github.com/mesutakcan/Nibbles-Deluxe/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/mesutakcan/Nibbles-Deluxe?style=social)](https://github.com/mesutakcan/Nibbles-Deluxe/forks)
@@ -43,7 +43,7 @@ always called `NIBBLESD.BAS`.
 - Settings and names are saved to `NIBBLES.CFG`; the high score and the name of its owner
   are saved to `NIBBLES.HI`
 - The game speed is calibrated at start-up, so it plays the same on any computer
-- 12 levels (the 10 original levels plus 2 new ones)
+- 20 levels (the 10 original levels plus 10 new ones)
 - Runs in DOS / DOSBox and natively on Windows (32 bit and 64 bit)
 
 ![Nibbles Deluxe SS 2](docs/screenshot_2.png)
@@ -156,9 +156,24 @@ in turn, the snake is wiped out from head to tail, or both one after the other).
 
 ## Levels
 
-12 levels with different walls. Levels 1 to 10 are the original Nibbles levels; level 11 is a
-box with four gates and level 12 is a big plus sign. After level 12 the levels start again
-(and, with "Faster each level" switched on, the game keeps getting faster).
+20 levels with different walls. Levels 1 to 10 are the original Nibbles levels. The new levels
+are:
+
+| Level | Walls |
+| --- | --- |
+| 11 | A box with four gates |
+| 12 | A big plus sign |
+| 13 | Bunkers: four corner pockets |
+| 14 | Pinwheel |
+| 15 | Diamond |
+| 16 | Pillars |
+| 17 | Serpentine |
+| 18 | Crossed diagonals |
+| 19 | Fortress |
+| 20 | Nested boxes |
+
+After level 20 the levels start again (and, with "Faster each level" switched on, the game
+keeps getting faster).
 
 ## Settings
 
@@ -167,7 +182,7 @@ box with four gates and level 12 is a big plus sign. After level 12 the levels s
 | Players | 1 or 2 |
 | Speed | 1 to 10 |
 | Faster each level | ON / OFF |
-| Start level | 1 to 12 |
+| Start level | 1 to 20 |
 | Colors | CLASSIC, NIGHT, MONO |
 | Sound | ON / OFF |
 | Mines | OFF, RANDOM, FIXED, BOTH |
@@ -259,6 +274,13 @@ Instead of the command line you can also open `NIBBLESD.BAS` in the QB64-PE edit
 ## History
 
 Newest version first.
+
+### Version 7 - 2026-10-13
+
+- 8 new levels, for 20 levels in total: bunkers (13), pinwheel (14), diamond (15), pillars
+  (16), serpentine (17), crossed diagonals (18), fortress (19) and nested boxes (20)
+- The **Start level** setting now goes from 1 to 20
+- The levels start again after level 20
 
 ### Version 6 - 2026-10-12
 

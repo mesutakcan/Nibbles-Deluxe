@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 6
-'  2026-10-12
+'  Version 7
+'  2026-10-13
 '
 '  Written for QuickBASIC 4.5 (QB45); it also runs in QBasic 1.1 and QB64-PE.
 '  For detailed information, please refer to the README.md file.
@@ -104,12 +104,12 @@ CONST TRUE = -1
 CONST FALSE = 0
 CONST MAXSNAKELENGTH = 1000
 CONST STARTLEN = 5
-CONST NUMLEVELS = 12
+CONST NUMLEVELS = 20
 CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGCHAR = 9         'character used for an egg
-CONST VERSIONTXT = "VERSION 6"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 7"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -575,7 +575,7 @@ SUB DoorTick
                 DoorSet 1, pal(4)
                 DoorSet 3, pal(4)
                 doorState = 3
-                doorTimer = DoorTicks(10000)
+                doorTimer = DoorTicks(20000)
             END IF
         CASE 3
             doorTimer = doorTimer - 1
@@ -1130,7 +1130,7 @@ SUB Level (what)
             sammy(1).col = 65: sammy(2).col = 15
             sammy(1).direction = 3: sammy(2).direction = 4
 
-        CASE ELSE                        'level 12: a big plus sign
+        CASE 12                          'level 12: a big plus sign
             FOR i = 2 TO 79
                 IF i < 36 OR i > 44 THEN Wall 26, i
             NEXT i
@@ -1138,6 +1138,115 @@ SUB Level (what)
                 IF i < 22 OR i > 30 THEN Wall i, 40
             NEXT i
             sammy(1).row = 7: sammy(2).row = 43
+            sammy(1).col = 65: sammy(2).col = 15
+            sammy(1).direction = 3: sammy(2).direction = 4
+
+        CASE 13                          'bunkers: four corner pockets
+            FOR i = 2 TO 22: Wall 14, i: Wall 39, i: NEXT i
+            FOR i = 59 TO 79: Wall 14, i: Wall 39, i: NEXT i
+            FOR i = 4 TO 7: Wall i, 22: Wall i, 59: NEXT i
+            FOR i = 46 TO 49: Wall i, 22: Wall i, 59: NEXT i
+            sammy(1).row = 25: sammy(2).row = 25
+            sammy(1).col = 50: sammy(2).col = 30
+            sammy(1).direction = 1: sammy(2).direction = 2
+
+        CASE 14                          'pinwheel
+            FOR i = 0 TO 13: Wall 8 + i, 10 + i: Wall 8 + i, 11 + i: NEXT i
+            FOR i = 0 TO 13: Wall 8 + i, 70 - i: Wall 8 + i, 71 - i: NEXT i
+            FOR i = 0 TO 13: Wall 45 + i, 23 - i: Wall 45 + i, 24 - i: NEXT i
+            FOR i = 0 TO 13: Wall 32 + i, 57 + i: Wall 32 + i, 58 + i: NEXT i
+            FOR i = 14 TO 22: Wall i, 40: NEXT i
+            FOR i = 31 TO 39: Wall i, 40: NEXT i
+            sammy(1).row = 25: sammy(2).row = 25
+            sammy(1).col = 50: sammy(2).col = 30
+            sammy(1).direction = 4: sammy(2).direction = 3
+
+        CASE 15                          'diamond
+            FOR i = 0 TO 11: Wall 12 + i, 36 - i: Wall 12 + i, 37 - i: NEXT i
+            FOR i = 0 TO 11: Wall 12 + i, 44 + i: Wall 12 + i, 45 + i: NEXT i
+            FOR i = 0 TO 9: Wall 30 + i, 27 + i: Wall 30 + i, 28 + i: NEXT i
+            FOR i = 0 TO 9: Wall 30 + i, 52 - i: Wall 30 + i, 53 - i: NEXT i
+            FOR i = 25 TO 27: FOR j = 38 TO 41: Wall i, j: NEXT j: NEXT i
+            sammy(1).row = 7: sammy(2).row = 46
+            sammy(1).col = 65: sammy(2).col = 15
+            sammy(1).direction = 3: sammy(2).direction = 4
+
+        CASE 16                          'pillars
+            FOR i = 9 TO 12: FOR j = 10 TO 13: Wall i, j: NEXT j: NEXT i
+            FOR i = 9 TO 12: FOR j = 24 TO 27: Wall i, j: NEXT j: NEXT i
+            FOR i = 9 TO 12: FOR j = 38 TO 41: Wall i, j: NEXT j: NEXT i
+            FOR i = 9 TO 12: FOR j = 52 TO 55: Wall i, j: NEXT j: NEXT i
+            FOR i = 9 TO 12: FOR j = 66 TO 69: Wall i, j: NEXT j: NEXT i
+            FOR i = 19 TO 22: FOR j = 17 TO 20: Wall i, j: NEXT j: NEXT i
+            FOR i = 19 TO 22: FOR j = 31 TO 34: Wall i, j: NEXT j: NEXT i
+            FOR i = 19 TO 22: FOR j = 45 TO 48: Wall i, j: NEXT j: NEXT i
+            FOR i = 19 TO 22: FOR j = 59 TO 62: Wall i, j: NEXT j: NEXT i
+            FOR i = 19 TO 22: FOR j = 73 TO 76: Wall i, j: NEXT j: NEXT i
+            FOR i = 29 TO 32: FOR j = 10 TO 13: Wall i, j: NEXT j: NEXT i
+            FOR i = 29 TO 32: FOR j = 24 TO 27: Wall i, j: NEXT j: NEXT i
+            FOR i = 29 TO 32: FOR j = 38 TO 41: Wall i, j: NEXT j: NEXT i
+            FOR i = 29 TO 32: FOR j = 52 TO 55: Wall i, j: NEXT j: NEXT i
+            FOR i = 29 TO 32: FOR j = 66 TO 69: Wall i, j: NEXT j: NEXT i
+            FOR i = 39 TO 42: FOR j = 17 TO 20: Wall i, j: NEXT j: NEXT i
+            FOR i = 39 TO 42: FOR j = 31 TO 34: Wall i, j: NEXT j: NEXT i
+            FOR i = 39 TO 42: FOR j = 45 TO 48: Wall i, j: NEXT j: NEXT i
+            FOR i = 39 TO 42: FOR j = 59 TO 62: Wall i, j: NEXT j: NEXT i
+            FOR i = 39 TO 42: FOR j = 73 TO 76: Wall i, j: NEXT j: NEXT i
+            sammy(1).row = 7: sammy(2).row = 46
+            sammy(1).col = 65: sammy(2).col = 15
+            sammy(1).direction = 3: sammy(2).direction = 4
+
+        CASE 17                          'serpentine
+            FOR i = 2 TO 70: Wall 13, i: Wall 33, i: NEXT i
+            FOR i = 10 TO 79: Wall 23, i: Wall 43, i: NEXT i
+            sammy(1).row = 7: sammy(2).row = 46
+            sammy(1).col = 65: sammy(2).col = 15
+            sammy(1).direction = 3: sammy(2).direction = 4
+
+        CASE 18                          'crossed diagonals
+            FOR i = 0 TO 33: Wall 5 + i, 10 + i: Wall 5 + i, 11 + i: NEXT i
+            FOR i = 0 TO 31: Wall 14 + i, 68 - i: Wall 14 + i, 69 - i: NEXT i
+            sammy(1).row = 7: sammy(2).row = 46
+            sammy(1).col = 65: sammy(2).col = 15
+            sammy(1).direction = 3: sammy(2).direction = 4
+
+        CASE 19                          'fortress
+            FOR i = 18 TO 62
+                IF i < 36 OR i > 44 THEN
+                    Wall 12, i
+                    Wall 40, i
+                END IF
+            NEXT i
+            FOR i = 12 TO 40
+                IF i < 22 OR i > 30 THEN
+                    Wall i, 18
+                    Wall i, 62
+                END IF
+            NEXT i
+            FOR i = 24 TO 28: FOR j = 37 TO 42: Wall i, j: NEXT j: NEXT i
+            FOR i = 17 TO 19: FOR j = 26 TO 28: Wall i, j: Wall i, j + 26: Wall i + 17, j: Wall i + 17, j + 26: NEXT j: NEXT i
+            FOR i = 0 TO 9: Wall 5 + i, 5 + i: Wall 5 + i, 6 + i: NEXT i
+            FOR i = 0 TO 9: Wall 5 + i, 76 - i: Wall 5 + i, 77 - i: NEXT i
+            FOR i = 0 TO 9: Wall 36 + i, 14 - i: Wall 36 + i, 15 - i: NEXT i
+            FOR i = 0 TO 9: Wall 36 + i, 66 + i: Wall 36 + i, 67 + i: NEXT i
+            sammy(1).row = 7: sammy(2).row = 43
+            sammy(1).col = 65: sammy(2).col = 15
+            sammy(1).direction = 3: sammy(2).direction = 4
+
+        CASE ELSE                        'level 20: nested boxes
+            FOR i = 8 TO 73: Wall 10, i: Wall 43, i: NEXT i
+            FOR i = 10 TO 43: Wall i, 73: NEXT i
+            FOR i = 10 TO 23: Wall i, 8: NEXT i
+            FOR i = 30 TO 43: Wall i, 8: NEXT i
+            FOR i = 16 TO 65: Wall 16, i: Wall 37, i: NEXT i
+            FOR i = 16 TO 37: Wall i, 16: NEXT i
+            FOR i = 16 TO 23: Wall i, 65: NEXT i
+            FOR i = 30 TO 37: Wall i, 65: NEXT i
+            FOR i = 26 TO 55: Wall 31, i: NEXT i
+            FOR i = 26 TO 37: Wall 22, i: NEXT i
+            FOR i = 44 TO 55: Wall 22, i: NEXT i
+            FOR i = 22 TO 31: Wall i, 26: Wall i, 55: NEXT i
+            sammy(1).row = 7: sammy(2).row = 46
             sammy(1).col = 65: sammy(2).col = 15
             sammy(1).direction = 3: sammy(2).direction = 4
     END SELECT
