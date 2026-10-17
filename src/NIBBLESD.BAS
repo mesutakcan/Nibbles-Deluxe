@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 7
-'  2026-10-13
+'  Version 8
+'  2026-10-14
 '
 '  Written for QuickBASIC 4.5 (QB45); it also runs in QBasic 1.1 and QB64-PE.
 '  For detailed information, please refer to the README.md file.
@@ -33,6 +33,7 @@ TYPE snakeType
 END TYPE
 
 '---- Sub declarations --------------------------------------------------------
+DECLARE FUNCTION AddToTable (n$, sc&, lv)
 DECLARE FUNCTION AskYesNo (msg$)
 DECLARE FUNCTION BannerRow$ (i)
 DECLARE FUNCTION BodyColor (a, idx)
@@ -44,7 +45,9 @@ DECLARE FUNCTION DoorTicks (ms)
 DECLARE FUNCTION EggsReachable ()
 DECLARE FUNCTION MineSpotOk (r, c)
 DECLARE FUNCTION TryChooseDoor ()
+DECLARE FUNCTION WallColor (row, col)
 DECLARE FUNCTION GameOverScreen ()
+DECLARE FUNCTION IsWallColor (c)
 DECLARE FUNCTION MainMenu ()
 DECLARE FUNCTION Num7$ (v&)
 DECLARE FUNCTION PointIsThere (row, col)
@@ -59,7 +62,7 @@ DECLARE SUB DeathAnim (a, variant)
 DECLARE SUB DelayMs (ms)
 DECLARE SUB DoorBlink (kind, flag)
 DECLARE SUB DoorReset ()
-DECLARE SUB DoorSet (k, c)
+DECLARE SUB DoorSet (k, wallFlag)
 DECLARE SUB DoorTick ()
 DECLARE SUB Dialog (t1$, t2$, hint$)
 DECLARE SUB DrawBanner (row, phase, withShadow)
@@ -68,7 +71,9 @@ DECLARE SUB DrawCell (r, c)
 DECLARE SUB DrawHud ()
 DECLARE SUB DrawHudCenter (eggFg)
 DECLARE SUB DrawItems ()
+DECLARE SUB DrawTable (r0, hl1, hl2, baseAttr, hlAttr)
 DECLARE SUB DrawMenu (sel)
+DECLARE SUB DrawMenuFrame ()
 DECLARE SUB DrawMenuHint ()
 DECLARE SUB EditName (who)
 DECLARE SUB EraseSnake (a)
@@ -91,6 +96,7 @@ DECLARE SUB RunBfs ()
 DECLARE SUB SaveConfig ()
 DECLARE SUB SaveHigh ()
 DECLARE SUB SetBlink (flag)
+DECLARE SUB ShowScores ()
 DECLARE SUB Sfx (n)
 DECLARE SUB SparklePause ()
 DECLARE SUB SpawnBonus ()
@@ -109,7 +115,7 @@ CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGCHAR = 9         'character used for an egg
-CONST VERSIONTXT = "VERSION 7"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 8"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -123,22 +129,24 @@ DIM SHARED arena(1 TO 50, 1 TO 80)
 DIM SHARED sammy(1 TO 2) AS snakeType
 DIM SHARED sammyBody(0 TO MAXSNAKELENGTH - 1, 1 TO 2) AS snakeBody
 DIM SHARED qd(1 TO 2, 1 TO 3), qn(1 TO 2)       'buffered turns per snake
-DIM SHARED pal(1 TO 16)                           'colour table, see ApplyTheme
+DIM SHARED pal(1 TO 18)                           'colour table, see ApplyTheme
 DIM SHARED minRow(1 TO MAXMINE), minCol(1 TO MAXMINE), minTime(1 TO MAXMINE)
 DIM SHARED hitMine(1 TO 2)
 DIM SHARED eggRow(1 TO MAXEGG), eggCol(1 TO MAXEGG)
 DIM SHARED fxRow(1 TO MAXFIX), fxCol(1 TO MAXFIX)     'fixed mines
 DIM SHARED bfsDist(1 TO 50, 1 TO 80), bfsQ(0 TO 3999)   'path search for the heart
 DIM SHARED hiName$
+DIM SHARED hsName$(1 TO 10), hsLevel(1 TO 10), hsCount, rankOf(1 TO 2)
+DIM SHARED hsScore(1 TO 10) AS LONG                 'high score table
 DIM SHARED nm$(1 TO 2)
 DIM SHARED vidSeg AS LONG
 DIM SHARED highScore AS LONG
 DIM SHARED loopsPerMs AS SINGLE
-DIM SHARED curLevel, numPlayers, speedSet, speedUp, startLevel, theme, soundOn, mineMode, doorsOn
+DIM SHARED curLevel, numPlayers, speedSet, speedUp, startLevel, theme, soundOn, mineMode, doorsOn, wallStone, endMode
 DIM SHARED bonRow, bonCol, bonOn, bonTime, eggLeft, eggTotal, fxCount
 DIM SHARED heartOn, heartRow, heartCol, heartTime, heartMax, heartDone, tickCnt
 DIM SHARED doorState, doorTimer, doorRow          'side doors
-DIM SHARED newHigh, abortGame, anyDead, levelDone, stepMs
+DIM SHARED newHigh, abortGame, anyDead, levelDone, stepMs, victory
 DIM SHARED fileFail, fileBusy
 
 '---- Main program --------------------------------------------------------------
@@ -156,6 +164,7 @@ DEF SEG
 nm$(1) = "SAMMY": nm$(2) = "JAKE"
 numPlayers = 1: speedSet = 5: speedUp = TRUE
 startLevel = 1: theme = 1: soundOn = TRUE: mineMode = 4: doorsOn = TRUE
+wallStone = TRUE: endMode = 1
 LoadConfig
 ApplyTheme
 LoadHigh
@@ -198,22 +207,50 @@ FileErr:
     END IF
 
 'AddScore:
-'  Adds points to a player and keeps the high score up to date
+'  Adds points to a player and keeps the live high score up to date
 SUB AddScore (a, pts)
     sammy(a).score = sammy(a).score + pts
     IF sammy(a).score > highScore THEN
         highScore = sammy(a).score
         hiName$ = nm$(a)
-        newHigh = TRUE
     END IF
 END SUB
 
+'AddToTable:
+'  Puts a score into the high score table.  Returns its rank (1 to 10),
+'  0 if it did not make it.
+FUNCTION AddToTable (n$, sc&, lv)
+    AddToTable = 0
+    IF sc& <= 0 THEN EXIT FUNCTION
+    slot = hsCount + 1
+    FOR i = 1 TO hsCount
+        IF sc& > hsScore(i) THEN
+            slot = i
+            EXIT FOR
+        END IF
+    NEXT i
+    IF slot > 10 THEN EXIT FUNCTION
+    lastIdx = hsCount
+    IF lastIdx > 9 THEN lastIdx = 9
+    FOR i = lastIdx TO slot STEP -1
+        hsName$(i + 1) = hsName$(i)
+        hsScore(i + 1) = hsScore(i)
+        hsLevel(i + 1) = hsLevel(i)
+    NEXT i
+    hsName$(slot) = n$
+    hsScore(slot) = sc&
+    hsLevel(slot) = lv
+    IF hsCount < 10 THEN hsCount = hsCount + 1
+    AddToTable = slot
+END FUNCTION
+
 'ApplyTheme:
 '  Fills the colour table.  Entries:
-'   1 snake 1 body   2 snake 2 body   3 walls        4 background
+'   1 snake 1 body   2 snake 2 body   3 plain walls   4 background
 '   5 dialog text    6 dialog back    7 snake 1 head  8 snake 2 head
-'   9 number colour 10 bonus colour  11 status text  12 status back
+'   9 egg colour    10 bonus colour  11 status text  12 status back
 '  13 snake 1 stripe 14 snake 2 stripe 15 mine colour 16 egg count (status)
+'  17/18 stone walls (two greys, set below for every theme)
 SUB ApplyTheme
     SELECT CASE theme
         CASE 1                                  'Classic (blue)
@@ -226,12 +263,23 @@ SUB ApplyTheme
             pal(5) = 15: pal(6) = 1: pal(7) = 15: pal(8) = 15
             pal(9) = 14: pal(10) = 13: pal(11) = 15: pal(12) = 1
             pal(13) = 2: pal(14) = 3: pal(15) = 12: pal(16) = 14
-        CASE ELSE                               'Mono
-            pal(1) = 15: pal(2) = 7: pal(3) = 8: pal(4) = 0
-            pal(5) = 0: pal(6) = 7: pal(7) = 7: pal(8) = 15
-            pal(9) = 15: pal(10) = 15: pal(11) = 7: pal(12) = 0
-            pal(13) = 7: pal(14) = 7: pal(15) = 15: pal(16) = 15
+        CASE 3                                  'Forest (green)
+            pal(1) = 14: pal(2) = 11: pal(3) = 6: pal(4) = 2
+            pal(5) = 15: pal(6) = 1: pal(7) = 15: pal(8) = 15
+            pal(9) = 15: pal(10) = 13: pal(11) = 15: pal(12) = 0
+            pal(13) = 6: pal(14) = 3: pal(15) = 12: pal(16) = 14
+        CASE 4                                  'Ocean (cyan)
+            pal(1) = 14: pal(2) = 13: pal(3) = 1: pal(4) = 3
+            pal(5) = 15: pal(6) = 1: pal(7) = 15: pal(8) = 15
+            pal(9) = 15: pal(10) = 10: pal(11) = 15: pal(12) = 1
+            pal(13) = 6: pal(14) = 5: pal(15) = 12: pal(16) = 14
+        CASE ELSE                               'Desert (brown)
+            pal(1) = 10: pal(2) = 11: pal(3) = 14: pal(4) = 6
+            pal(5) = 15: pal(6) = 1: pal(7) = 15: pal(8) = 15
+            pal(9) = 15: pal(10) = 13: pal(11) = 15: pal(12) = 0
+            pal(13) = 2: pal(14) = 3: pal(15) = 12: pal(16) = 14
     END SELECT
+    pal(17) = 7: pal(18) = 8
 END SUB
 
 'AskYesNo:
@@ -270,7 +318,7 @@ END FUNCTION
 '  life and the egg counter when only 1 or 2 eggs are left
 SUB BlinkHud
     hb = pal(12) * 16
-    IF theme = 3 THEN hc = pal(11) ELSE hc = 12
+    hc = 12
     IF (tickCnt AND 4) = 0 THEN fc = hc ELSE fc = pal(12)
     IF sammy(1).lives = 1 THEN PutChar 1, 11, 3, fc + hb
     IF numPlayers = 2 THEN
@@ -362,8 +410,8 @@ SUB ChangeSetting (sel, d)
             IF startLevel > NUMLEVELS THEN startLevel = NUMLEVELS
         CASE 5
             theme = theme + d
-            IF theme > 3 THEN theme = 1
-            IF theme < 1 THEN theme = 3
+            IF theme > 5 THEN theme = 1
+            IF theme < 1 THEN theme = 5
         CASE 6
             soundOn = NOT soundOn
         CASE 7
@@ -372,6 +420,10 @@ SUB ChangeSetting (sel, d)
             IF mineMode < 1 THEN mineMode = 4
         CASE 8
             doorsOn = NOT doorsOn
+        CASE 9
+            wallStone = NOT wallStone
+        CASE 10
+            IF endMode = 1 THEN endMode = 2 ELSE endMode = 1
     END SELECT
 END SUB
 
@@ -491,7 +543,7 @@ SUB DoorBlink (kind, flag)
                 t = arena(r * 2 - 1, cl)
                 b = arena(r * 2, cl)
                 IF t = b THEN
-                    IF t = pal(3) OR t = pal(4) THEN PutChar r, cl, ch, pal(9) + pal(4) * 16
+                    IF IsWallColor(t) OR t = pal(4) THEN PutChar r, cl, ch, pal(9) + pal(4) * 16
                 END IF
             ELSE
                 DrawCell r, cl
@@ -532,13 +584,19 @@ SUB DoorReset
 END SUB
 
 'DoorSet:
-'  Sets the four pixels of door cell k (both walls) to colour c
-SUB DoorSet (k, c)
+'  Sets the four pixels of door cell k (both walls): wall or empty
+SUB DoorSet (k, wallFlag)
     r = doorRow + k
-    PutPixel r * 2 - 1, 1, c
-    PutPixel r * 2, 1, c
-    PutPixel r * 2 - 1, 80, c
-    PutPixel r * 2, 80, c
+    FOR side = 1 TO 2
+        IF side = 1 THEN cl = 1 ELSE cl = 80
+        FOR p = r * 2 - 1 TO r * 2
+            IF wallFlag THEN
+                PutPixel p, cl, WallColor(p, cl)
+            ELSE
+                PutPixel p, cl, pal(4)
+            END IF
+        NEXT p
+    NEXT side
 END SUB
 
 'DoorTick:
@@ -562,8 +620,8 @@ SUB DoorTick
             doorTimer = doorTimer - 1
             IF doorTimer <= 0 THEN
                 DoorBlink 1, FALSE
-                DoorSet 0, pal(4)
-                DoorSet 2, pal(4)
+                DoorSet 0, FALSE
+                DoorSet 2, FALSE
                 doorState = 2
                 doorTimer = DoorTicks(250)
             ELSE
@@ -572,8 +630,8 @@ SUB DoorTick
         CASE 2
             doorTimer = doorTimer - 1
             IF doorTimer <= 0 THEN
-                DoorSet 1, pal(4)
-                DoorSet 3, pal(4)
+                DoorSet 1, FALSE
+                DoorSet 3, FALSE
                 doorState = 3
                 doorTimer = DoorTicks(20000)
             END IF
@@ -590,8 +648,8 @@ SUB DoorTick
                 DoorBlink 2, (doorTimer \ 2) AND 1
             ELSEIF DoorFree(15) THEN
                 DoorBlink 2, FALSE
-                DoorSet 1, pal(3)
-                DoorSet 3, pal(3)
+                DoorSet 1, TRUE
+                DoorSet 3, TRUE
                 doorState = 5
                 doorTimer = DoorTicks(250)
             ELSE
@@ -601,8 +659,8 @@ SUB DoorTick
             IF doorTimer > 0 THEN doorTimer = doorTimer - 1
             IF doorTimer <= 0 THEN
                 IF DoorFree(5) THEN
-                    DoorSet 0, pal(3)
-                    DoorSet 2, pal(3)
+                    DoorSet 0, TRUE
+                    DoorSet 2, TRUE
                     doorState = 0
                     doorTimer = DoorTicks(10000 + INT(RND * 15000))
                 END IF
@@ -680,7 +738,7 @@ END SUB
 SUB DrawHud
     hb = pal(12) * 16
     FillRect 1, 1, 1, 80, 32, pal(11) + hb
-    IF theme = 3 THEN hc = pal(11) ELSE hc = 12
+    hc = 12
 
     lv = sammy(1).lives
     IF lv < 0 THEN lv = 0
@@ -727,7 +785,7 @@ SUB DrawItems
     NEXT e
     IF bonOn THEN PutChar bonRow, bonCol, 4, pal(10) + pal(4) * 16
     IF heartOn THEN
-        IF theme = 3 THEN hc = 15 ELSE hc = 12
+        hc = 12
         PutChar heartRow, heartCol, 3, hc + pal(4) * 16
     END IF
     FOR m = 1 TO MAXMINE
@@ -741,8 +799,8 @@ END SUB
 'DrawMenu:
 '  Draws the settings menu, sel is the highlighted line
 SUB DrawMenu (sel)
-    FOR i = 1 TO 12
-        r = 10 + i
+    FOR i = 1 TO 15
+        r = 8 + i
         IF i = sel THEN attr = 0 + 7 * 16 ELSE attr = 7
         FillRect r, 19, r, 62, 32, attr
         SELECT CASE i
@@ -754,8 +812,11 @@ SUB DrawMenu (sel)
             CASE 6: lab$ = "Sound"
             CASE 7: lab$ = "Mines"
             CASE 8: lab$ = "Doors"
-            CASE 9: lab$ = "Player 1 name"
-            CASE 10: lab$ = "Player 2 name"
+            CASE 9: lab$ = "Walls"
+            CASE 10: lab$ = "After last level"
+            CASE 11: lab$ = "Player 1 name"
+            CASE 12: lab$ = "Player 2 name"
+            CASE 13: lab$ = "High scores"
             CASE ELSE: lab$ = ""
         END SELECT
         SELECT CASE i
@@ -771,7 +832,9 @@ SUB DrawMenu (sel)
                 SELECT CASE theme
                     CASE 1: v$ = "CLASSIC"
                     CASE 2: v$ = "NIGHT"
-                    CASE ELSE: v$ = "MONO"
+                    CASE 3: v$ = "FOREST"
+                    CASE 4: v$ = "OCEAN"
+                    CASE ELSE: v$ = "DESERT"
                 END SELECT
             CASE 6
                 IF soundOn THEN v$ = "ON" ELSE v$ = "OFF"
@@ -785,16 +848,20 @@ SUB DrawMenu (sel)
             CASE 8
                 IF doorsOn THEN v$ = "ON" ELSE v$ = "OFF"
             CASE 9
-                v$ = nm$(1)
+                IF wallStone THEN v$ = "STONE" ELSE v$ = "PLAIN"
             CASE 10
+                IF endMode = 1 THEN v$ = "ENDING" ELSE v$ = "ENDLESS"
+            CASE 11
+                v$ = nm$(1)
+            CASE 12
                 v$ = nm$(2)
             CASE ELSE
                 v$ = ""
         END SELECT
-        IF i <= 10 THEN
+        IF i <= 13 THEN
             PutStr r, 22, lab$, attr
             IF i = sel THEN
-                IF i >= 9 THEN
+                IF i >= 11 THEN
                     v$ = v$ + "  [ENTER]"
                 ELSE
                     v$ = CHR$(17) + " " + v$ + " " + CHR$(16)
@@ -803,7 +870,7 @@ SUB DrawMenu (sel)
             ELSE
                 PutStr r, 44, v$, 15
             END IF
-        ELSEIF i = 11 THEN
+        ELSEIF i = 14 THEN
             Center r, "S T A R T   G A M E", attr
         ELSE
             Center r, "Q U I T", attr
@@ -811,11 +878,43 @@ SUB DrawMenu (sel)
     NEXT i
 END SUB
 
+'DrawMenuFrame:
+'  Background of the menu screen: logo, box, high score, help line
+SUB DrawMenuFrame
+    ClearScreen 7
+    DrawBanner 2, 0, TRUE
+    DrawBox 8, 18, 24, 63, 11
+    Center 8, " S E T T I N G S ", 14
+    Center 24, " HIGH SCORE:" + STR$(highScore) + "  " + hiName$ + " ", 14
+    DrawMenuHint
+END SUB
+
 'DrawMenuHint:
 '  Help line of the menu
 SUB DrawMenuHint
-    FillRect 24, 1, 24, 80, 32, 7
-    Center 24, "UP/DOWN select    LEFT/RIGHT change    ENTER start    ESC quit", 7
+    FillRect 25, 1, 25, 80, 32, 7
+    Center 25, "UP/DOWN select    LEFT/RIGHT change    ENTER start    ESC quit", 7
+END SUB
+
+'DrawTable:
+'  Draws the high score table (header on row r0, entries below it).
+'  Entries hl1 and hl2 are drawn with hlAttr.
+SUB DrawTable (r0, hl1, hl2, baseAttr, hlAttr)
+    Center r0, "H I G H   S C O R E S", hlAttr
+    FOR i = 1 TO 10
+        IF i <= hsCount THEN
+            nn$ = hsName$(i)
+            sc$ = Num7$(hsScore(i))
+            lv$ = RIGHT$("0" + LTRIM$(STR$(hsLevel(i))), 2)
+        ELSE
+            nn$ = "--------"
+            sc$ = Num7$(0&)
+            lv$ = "--"
+        END IF
+        ln$ = RIGHT$(" " + LTRIM$(STR$(i)), 2) + ". " + nn$ + SPACE$(8 - LEN(nn$)) + " " + sc$ + "   L" + lv$
+        IF i = hl1 OR i = hl2 THEN ta = hlAttr ELSE ta = baseAttr
+        Center r0 + 1 + i, ln$, ta
+    NEXT i
 END SUB
 
 'EditName:
@@ -828,8 +927,8 @@ SUB EditName (who)
         r = 20
         dflt$ = "JAKE"
     END IF
-    FillRect 24, 1, 24, 80, 32, 7
-    Center 24, "Type a name (max 8 characters)    ENTER = ok    ESC = cancel", 14
+    FillRect 25, 1, 25, 80, 32, 7
+    Center 25, "Type a name (max 8 characters)    ENTER = ok    ESC = cancel", 14
     n$ = ""
     cancelled = FALSE
     DO
@@ -907,17 +1006,24 @@ SUB FindCell (rr, cc)
 END SUB
 
 'GameOverScreen:
-'  Shows the results, returns 1 = play again, 2 = menu, 3 = quit
+'  Shows the results and the high score table.
+'  Returns 1 = play again, 2 = menu, 3 = quit
 FUNCTION GameOverScreen
     attr = pal(5) + pal(6) * 16
-    DrawBox 6, 22, 18, 59, attr
-    Center 8, "G A M E   O V E R", attr
+    DrawBox 2, 20, 24, 61, attr
+    IF victory THEN
+        Center 3, "C O N G R A T U L A T I O N S !", attr
+        Center 4, "You completed all" + STR$(NUMLEVELS) + " levels!", attr
+    ELSE
+        Center 3, "G A M E   O V E R", attr
+    END IF
 
-    l1$ = nm$(1) + SPACE$(8 - LEN(nm$(1))) + Num7$(sammy(1).score)
+    FOR a = 1 TO numPlayers
+        l$ = nm$(a) + SPACE$(8 - LEN(nm$(a))) + Num7$(sammy(a).score)
+        IF rankOf(a) > 0 THEN l$ = l$ + "   RANK" + STR$(rankOf(a))
+        Center 5 + a, l$, attr
+    NEXT a
     IF numPlayers = 2 THEN
-        l2$ = nm$(2) + SPACE$(8 - LEN(nm$(2))) + Num7$(sammy(2).score)
-        Center 10, l1$, attr
-        Center 11, l2$, attr
         IF sammy(1).score > sammy(2).score THEN
             res$ = nm$(1) + " WINS!"
         ELSEIF sammy(2).score > sammy(1).score THEN
@@ -925,17 +1031,14 @@ FUNCTION GameOverScreen
         ELSE
             res$ = "IT IS A DRAW!"
         END IF
-        Center 13, res$, attr
-    ELSE
-        Center 11, l1$, attr
+        Center 8, res$, attr
+    ELSEIF rankOf(1) = 1 THEN
+        Center 8, "*  NEW HIGH SCORE!  *", attr
     END IF
-    IF newHigh THEN
-        Center 14, "*  NEW HIGH SCORE!  *", attr
-    ELSE
-        Center 14, "High score" + STR$(highScore) + "  " + hiName$, attr
-    END IF
-    Center 16, "ENTER = play again", attr
-    Center 17, "M = menu      ESC = quit", attr
+
+    DrawTable 10, rankOf(1), rankOf(2), attr, 14 + pal(6) * 16
+    Center 22, "ENTER = play again", attr
+    Center 23, "M = menu      ESC = quit", attr
 
     DO WHILE INKEY$ <> "": LOOP
     DO
@@ -975,6 +1078,12 @@ SUB Intro
     IF soundOn THEN PLAY "MBT160O1L8CDEDCDL4ECC"
     SparklePause
 END SUB
+
+'IsWallColor:
+'  TRUE if colour c is a wall colour (plain or stone)
+FUNCTION IsWallColor (c)
+    IsWallColor = (c = pal(3) OR c = pal(17) OR c = pal(18))
+END FUNCTION
 
 'Level:
 '  Builds a level: walls, start positions and snakes
@@ -1064,7 +1173,7 @@ SUB Level (what)
                     Wall i, 70
                 END IF
             NEXT i
-            sammy(1).row = 7: sammy(2).row = 43
+            sammy(1).row = 10: sammy(2).row = 43
             sammy(1).col = 65: sammy(2).col = 15
             sammy(1).direction = 2: sammy(2).direction = 1
 
@@ -1072,7 +1181,7 @@ SUB Level (what)
             FOR i = 4 TO 49 STEP 2
                 Wall i, 40
             NEXT i
-            sammy(1).row = 7: sammy(2).row = 43
+            sammy(1).row = 10: sammy(2).row = 43
             sammy(1).col = 65: sammy(2).col = 15
             sammy(1).direction = 2: sammy(2).direction = 1
 
@@ -1086,7 +1195,7 @@ SUB Level (what)
                 Wall 53 - i, 60
                 Wall i, 70
             NEXT i
-            sammy(1).row = 7: sammy(2).row = 43
+            sammy(1).row = 10: sammy(2).row = 43
             sammy(1).col = 65: sammy(2).col = 15
             sammy(1).direction = 2: sammy(2).direction = 1
 
@@ -1109,7 +1218,7 @@ SUB Level (what)
                 Wall i + 1, 60
                 Wall i, 70
             NEXT i
-            sammy(1).row = 7: sammy(2).row = 43
+            sammy(1).row = 10: sammy(2).row = 43
             sammy(1).col = 65: sammy(2).col = 15
             sammy(1).direction = 2: sammy(2).direction = 1
 
@@ -1265,16 +1374,20 @@ SUB Level (what)
             CASE 3: dc = -1
             CASE ELSE: dc = 1
         END SELECT
-        FOR j = 0 TO STARTLEN - 1
-            back = STARTLEN - 1 - j
+        nseg = 0
+        FOR back = 0 TO STARTLEN - 1                'head first, then the body behind it
             sr = sammy(a).row - back * dr
             sc = sammy(a).col - back * dc
+            IF sr < 4 OR sr > 49 OR sc < 2 OR sc > 79 THEN EXIT FOR
+            IF arena(sr, sc) <> pal(4) THEN EXIT FOR      'never start inside a wall
+            j = STARTLEN - 1 - back
             sammyBody(j, a).row = sr
             sammyBody(j, a).col = sc
-            IF j = STARTLEN - 1 THEN arena(sr, sc) = pal(6 + a) ELSE arena(sr, sc) = BodyColor(a, j)
-        NEXT j
+            IF back = 0 THEN arena(sr, sc) = pal(6 + a) ELSE arena(sr, sc) = BodyColor(a, j)
+            nseg = nseg + 1
+        NEXT back
         sammy(a).head = STARTLEN - 1
-        sammy(a).count = STARTLEN
+        sammy(a).count = nseg
         sammy(a).length = STARTLEN
     NEXT a
 
@@ -1313,7 +1426,7 @@ SUB LoadConfig
                     IF sp >= 1 AND sp <= 10 THEN speedSet = sp
                     speedUp = (su <> 0)
                     IF sl >= 1 AND sl <= NUMLEVELS THEN startLevel = sl
-                    IF th >= 1 AND th <= 3 THEN theme = th
+                    IF th >= 1 AND th <= 5 THEN theme = th
                     soundOn = (so <> 0)
                     IF mo >= 1 AND mo <= 4 THEN
                         mineMode = mo
@@ -1326,6 +1439,13 @@ SUB LoadConfig
                         INPUT #1, dr
                         IF NOT fileFail THEN doorsOn = (dr <> 0)
                     END IF
+                    IF NOT EOF(1) THEN
+                        INPUT #1, ws, em
+                        IF NOT fileFail THEN
+                            wallStone = (ws <> 0)
+                            IF em = 2 THEN endMode = 2 ELSE endMode = 1
+                        END IF
+                    END IF
                 END IF
             END IF
             CLOSE #1
@@ -1335,8 +1455,9 @@ SUB LoadConfig
 END SUB
 
 'LoadHigh:
-'  Reads the high score (and the name of its owner) from NIBBLES.HI
+'  Reads the high score table from NIBBLES.HI (old files hold one score)
 SUB LoadHigh
+    hsCount = 0
     fileFail = FALSE
     fileBusy = TRUE
     OPEN "NIBBLES.HI" FOR APPEND AS #1       'creates the file if missing
@@ -1344,27 +1465,47 @@ SUB LoadHigh
     IF NOT fileFail THEN
         OPEN "NIBBLES.HI" FOR INPUT AS #1
         IF NOT fileFail THEN
-            IF NOT EOF(1) THEN INPUT #1, highScore
-            IF NOT EOF(1) THEN INPUT #1, hiName$
+            IF NOT EOF(1) THEN
+                INPUT #1, t$
+                IF t$ = "NIB6" THEN
+                    DO WHILE NOT EOF(1) AND hsCount < 10
+                        INPUT #1, n$, sc&, lv
+                        IF fileFail THEN EXIT DO
+                        hsCount = hsCount + 1
+                        hsName$(hsCount) = CleanName$(n$, "?")
+                        hsScore(hsCount) = sc&
+                        hsLevel(hsCount) = lv
+                    LOOP
+                ELSE
+                    sc& = VAL(t$)
+                    n$ = ""
+                    IF NOT EOF(1) THEN INPUT #1, n$
+                    IF sc& > 0 THEN
+                        hsCount = 1
+                        hsName$(1) = CleanName$(n$, "?")
+                        hsScore(1) = sc&
+                        hsLevel(1) = 1
+                    END IF
+                END IF
+            END IF
             CLOSE #1
         END IF
     END IF
     fileBusy = FALSE
-    IF highScore < 0 THEN highScore = 0
-    hiName$ = CleanName$(hiName$, "")
+    IF hsCount > 0 THEN
+        highScore = hsScore(1)
+        hiName$ = hsName$(1)
+    ELSE
+        highScore = 0
+        hiName$ = ""
+    END IF
 END SUB
 
 'MainMenu:
 '  Settings menu.  Returns TRUE to start a game, FALSE to quit
 FUNCTION MainMenu
-    ClearScreen 7
-    DrawBanner 2, 0, TRUE
-    DrawBox 9, 18, 23, 63, 11
-    Center 9, " S E T T I N G S ", 14
-    DrawMenuHint
-    Center 25, "High score:" + STR$(highScore) + "  " + hiName$, 14
-
-    sel = 11
+    DrawMenuFrame
+    sel = 14
     DO
         DrawMenu sel
         DO
@@ -1373,27 +1514,33 @@ FUNCTION MainMenu
         SELECT CASE k$
             CASE CHR$(0) + "H"
                 sel = sel - 1
-                IF sel < 1 THEN sel = 12
+                IF sel < 1 THEN sel = 15
             CASE CHR$(0) + "P"
                 sel = sel + 1
-                IF sel > 12 THEN sel = 1
+                IF sel > 15 THEN sel = 1
             CASE CHR$(0) + "K"
                 ChangeSetting sel, -1
             CASE CHR$(0) + "M"
                 ChangeSetting sel, 1
             CASE " "
-                IF sel <= 8 THEN
+                IF sel <= 10 THEN
                     ChangeSetting sel, 1
-                ELSEIF sel = 9 OR sel = 10 THEN
-                    EditName sel - 8
+                ELSEIF sel = 11 OR sel = 12 THEN
+                    EditName sel - 10
                     DrawMenuHint
+                ELSEIF sel = 13 THEN
+                    ShowScores
+                    DrawMenuFrame
                 END IF
             CASE CHR$(13)
-                IF sel = 9 OR sel = 10 THEN
-                    EditName sel - 8
+                IF sel = 11 OR sel = 12 THEN
+                    EditName sel - 10
                     DrawMenuHint
+                ELSEIF sel = 13 THEN
+                    ShowScores
+                    DrawMenuFrame
                 ELSE
-                    IF sel = 12 THEN MainMenu = FALSE ELSE MainMenu = TRUE
+                    IF sel = 15 THEN MainMenu = FALSE ELSE MainMenu = TRUE
                     EXIT DO
                 END IF
             CASE CHR$(27)
@@ -1510,6 +1657,9 @@ END SUB
 SUB PlayNibbles
     abortGame = FALSE
     newHigh = FALSE
+    victory = FALSE
+    rankOf(1) = 0
+    rankOf(2) = 0
     tickCnt = 0
     FOR a = 1 TO 2
         sammy(a).lives = 5
@@ -1595,14 +1745,34 @@ SUB PlayNibbles
                 AddScore a, 500
             NEXT a
             DrawHud
-            Dialog "LEVEL COMPLETE!", "Bonus +500 points", "Press SPACE"
-            Level NEXTLEVEL
-            DrawHud
-            Dialog "L E V E L" + STR$(curLevel), "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to start"
+            IF endMode = 1 AND curLevel >= NUMLEVELS THEN
+                'the last level is done: life bonus and the end of the game
+                FOR a = 1 TO numPlayers
+                    AddScore a, sammy(a).lives * 1000
+                NEXT a
+                DrawHud
+                victory = TRUE
+                gameOver = TRUE
+                Dialog "ALL" + STR$(NUMLEVELS) + " LEVELS COMPLETE!", "Life bonus: 1000 per life", "Press SPACE"
+            ELSE
+                Dialog "LEVEL COMPLETE!", "Bonus +500 points", "Press SPACE"
+                Level NEXTLEVEL
+                DrawHud
+                Dialog "L E V E L" + STR$(curLevel), "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to start"
+            END IF
         END IF
     LOOP UNTIL gameOver
 
-    IF newHigh THEN SaveHigh
+    'enter the scores in the high score table
+    FOR a = 1 TO numPlayers
+        rankOf(a) = AddToTable(nm$(a), sammy(a).score, curLevel)
+    NEXT a
+    newHigh = (rankOf(1) = 1 OR rankOf(2) = 1)
+    IF rankOf(1) > 0 OR rankOf(2) > 0 THEN SaveHigh
+    IF hsCount > 0 THEN
+        highScore = hsScore(1)
+        hiName$ = hsName$(1)
+    END IF
 END SUB
 
 'PointIsThere:
@@ -1774,20 +1944,23 @@ SUB SaveConfig
     IF NOT fileFail THEN
         WRITE #1, nm$(1), nm$(2), numPlayers, speedSet, speedUp, startLevel, theme, soundOn, mineMode
         WRITE #1, doorsOn
+        WRITE #1, wallStone, endMode
         CLOSE #1
     END IF
     fileBusy = FALSE
 END SUB
 
 'SaveHigh:
-'  Writes the high score and its owner to NIBBLES.HI
+'  Writes the high score table to NIBBLES.HI
 SUB SaveHigh
     fileFail = FALSE
     fileBusy = TRUE
     OPEN "NIBBLES.HI" FOR OUTPUT AS #1
     IF NOT fileFail THEN
-        PRINT #1, highScore
-        WRITE #1, hiName$
+        WRITE #1, "NIB6"
+        FOR i = 1 TO hsCount
+            WRITE #1, hsName$(i), hsScore(i), hsLevel(i)
+        NEXT i
         CLOSE #1
     END IF
     fileBusy = FALSE
@@ -1819,6 +1992,18 @@ SUB Sfx (n)
         CASE 8: PLAY "MBT180O3L16CEGB>CE"               'heart caught
         CASE 9: PLAY "MBT200O2L32CEC"                   'door warning
     END SELECT
+END SUB
+
+'ShowScores:
+'  Full screen high score table (from the menu)
+SUB ShowScores
+    ClearScreen 7
+    DrawBox 3, 24, 20, 57, 11
+    DrawTable 4, 0, 0, 7, 14
+    Center 18, "Press any key", 8
+    DO WHILE INKEY$ <> "": LOOP
+    DO
+    LOOP WHILE INKEY$ = ""
 END SUB
 
 'SparklePause:
@@ -1900,7 +2085,7 @@ SUB SpawnHeart
         heartTime = heartMax
         heartOn = TRUE
         heartDone = TRUE
-        IF theme = 3 THEN hc = 15 ELSE hc = 12
+        hc = 12
         PutChar heartRow, heartCol, 3, hc + pal(4) * 16
         Sfx 7
     END IF
@@ -1987,13 +2172,8 @@ SUB Tick
             ELSE
                 hs = 4
             END IF
-            IF theme = 3 THEN
-                hc = 15
-                fc = 8
-            ELSE
-                hc = 12
-                fc = pal(9)
-            END IF
+            hc = 12
+            fc = pal(9)
             IF (heartTime \ hs) AND 1 THEN fc = hc
             PutChar heartRow, heartCol, 3, fc + pal(4) * 16
         END IF
@@ -2149,6 +2329,21 @@ END FUNCTION
 'Wall:
 '  Marks a pixel as wall (the screen is drawn later by RedrawRows)
 SUB Wall (row, col)
-    IF row >= 1 AND row <= 50 AND col >= 1 AND col <= 80 THEN arena(row, col) = pal(3)
+    IF row >= 1 AND row <= 50 AND col >= 1 AND col <= 80 THEN arena(row, col) = WallColor(row, col)
 END SUB
+
+'WallColor:
+'  Colour of the wall pixel (row, col): a two grey check pattern for stone
+'  walls (one pattern square per text cell), or the plain wall colour
+FUNCTION WallColor (row, col)
+    IF wallStone THEN
+        IF (((row + 1) \ 2) + col) AND 1 THEN
+            WallColor = pal(17)
+        ELSE
+            WallColor = pal(18)
+        END IF
+    ELSE
+        WallColor = pal(3)
+    END IF
+END FUNCTION
 

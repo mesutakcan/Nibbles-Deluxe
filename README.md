@@ -23,8 +23,9 @@ always called `NIBBLESD.BAS`.
 ## Features
 
 - Direct video memory graphics: fast, flicker free, exact colours
-- Settings menu: players, speed, colour theme, start level, sound, mines, doors, player names
-- Three colour themes: Classic, Night, Mono
+- Settings menu: players, speed, colour theme, start level, sound, mines, doors, walls, ending, player names
+- Five colour themes: Classic, Night, Forest, Ocean, Desert
+- Stone walls (grey check pattern) or plain coloured walls
 - Animated title screen with a big logo
 - Eggs to collect on every level (8 + level number, at most 25)
 - A heart appears when only one egg is left: catch it for an extra life
@@ -40,8 +41,10 @@ always called `NIBBLESD.BAS`.
 - Lives that really count down (the heart in the status line blinks on the last life),
   game over screen with the winner
 - Player names can be changed in the menu
-- Settings and names are saved to `NIBBLES.CFG`; the high score and the name of its owner
-  are saved to `NIBBLES.HI`
+- Top 10 high score table with names, scores and levels; the live high score is shown in the
+  status line during play
+- Settings and names are saved to `NIBBLES.CFG`; the high score table is saved to `NIBBLES.HI`
+- The game can end after level 20 with a victory screen and a life bonus, or go on endlessly
 - The game speed is calibrated at start-up, so it plays the same on any computer
 - 20 levels (the 10 original levels plus 10 new ones)
 - Runs in DOS / DOSBox and natively on Windows (32 bit and 64 bit)
@@ -112,8 +115,8 @@ a folder that is write-protected.
 | SPACE or ENTER | Close a message box |
 
 Menus: UP / DOWN select a line, LEFT / RIGHT (or SPACE) change a setting, ENTER starts the
-game (on the two name lines ENTER lets you type a name), ESC quits. On the game over screen
-ENTER plays again, M returns to the menu and ESC quits.
+game (on the two name lines ENTER lets you type a name, on the **High scores** line it shows the
+table), ESC quits. On the game over screen ENTER plays again, M returns to the menu and ESC quits.
 
 ## How to play
 
@@ -130,6 +133,8 @@ snakes die.
   lives). There is one heart per level. If you take the last egg first, the level ends and
   the heart is lost.
 - **Level complete**: 500 bonus points.
+- **Last level**: with **After last level** set to ENDING, finishing level 20 ends the game with a
+  victory screen and a bonus of 1000 points for every life you have left.
 - **Lives**: 5 for every player. The heart in the status line blinks when only one life is
   left. The game is over when a player has no life left. With two players the higher score
   wins.
@@ -172,8 +177,8 @@ are:
 | 19 | Fortress |
 | 20 | Nested boxes |
 
-After level 20 the levels start again (and, with "Faster each level" switched on, the game
-keeps getting faster).
+After level 20 the game ends with a victory screen (**After last level**: ENDING), or the levels
+start again (ENDLESS) and, with "Faster each level" switched on, the game keeps getting faster.
 
 ## Settings
 
@@ -183,12 +188,15 @@ keeps getting faster).
 | Speed | 1 to 10 |
 | Faster each level | ON / OFF |
 | Start level | 1 to 20 |
-| Colors | CLASSIC, NIGHT, MONO |
+| Colors | CLASSIC, NIGHT, FOREST, OCEAN, DESERT |
 | Sound | ON / OFF |
 | Mines | OFF, RANDOM, FIXED, BOTH |
 | Doors | ON / OFF |
+| Walls | STONE / PLAIN |
+| After last level | ENDING / ENDLESS |
 | Player 1 name | up to 8 characters (default SAMMY) |
 | Player 2 name | up to 8 characters (default JAKE) |
+| High scores | shows the top 10 table |
 
 The settings and the names are saved when you leave the menu and are loaded the next time
 the game starts.
@@ -199,12 +207,12 @@ the game starts.
 
 | File | Content |
 | --- | --- |
-| `NIBBLES.CFG` | The player names and all menu settings (including Doors) |
-| `NIBBLES.HI` | The high score and the name of its owner |
+| `NIBBLES.CFG` | The player names and all menu settings (including Doors, Walls and After last level) |
+| `NIBBLES.HI` | The top 10 high score table (name, score, level) |
 
 Both files are written to the current directory and keep these names in every version,
 whatever the program file is called. Delete them to start fresh. A `NIBBLES.HI` file from
-version 3 or earlier (score only) can still be read.
+an earlier version (a single score) can still be read.
 
 ## Building the EXE
 
@@ -274,6 +282,22 @@ Instead of the command line you can also open `NIBBLESD.BAS` in the QB64-PE edit
 ## History
 
 Newest version first.
+
+### Version 8 - 2026-10-14
+
+- New **top 10 high score table** (name, score and level) shown on the game over screen, with
+  your rank; also available from the menu (**High scores**); the high score in the status line
+  updates live; old `NIBBLES.HI` files are still read
+- New game over screen: results, winner or draw, the table, and ENTER / M / ESC to play again,
+  go to the menu or quit
+- New **After last level** setting: ENDING (victory screen after level 20 with a bonus of 1000
+  points per life left) or ENDLESS (levels repeat)
+- New **Walls** setting: STONE (grey check pattern) or PLAIN
+- Colour themes: Mono replaced by Forest, Ocean and Desert (five themes in total)
+- The new settings are saved in `NIBBLES.CFG`
+- Snakes can no longer start inside a wall: the starting body is checked cell by cell, and the
+  start positions of player 1 on levels 6, 7, 8 and 10 were moved
+- The settings menu has more lines and the help line moved to the bottom row of the screen
 
 ### Version 7 - 2026-10-13
 
