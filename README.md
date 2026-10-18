@@ -161,21 +161,32 @@ in turn, the snake is wiped out from head to tail, or both one after the other).
 
 ## Levels
 
-20 levels with different walls. Levels 1 to 10 are the original Nibbles levels. The new levels
-are:
+20 levels with different walls, played from easy to hard. Ten of them are the original
+Nibbles levels, ten are new. The number is the play order (the **Start level** setting uses it
+too).
 
-| Level | Walls |
-| --- | --- |
-| 11 | A box with four gates |
-| 12 | A big plus sign |
-| 13 | Bunkers: four corner pockets |
-| 14 | Pinwheel |
-| 15 | Diamond |
-| 16 | Pillars |
-| 17 | Serpentine |
-| 18 | Crossed diagonals |
-| 19 | Fortress |
-| 20 | Nested boxes |
+| Level | Walls | Origin |
+| --- | --- | --- |
+| 1 | Empty arena | original |
+| 2 | Centre bar | original |
+| 3 | Two columns | original |
+| 4 | Fence | original |
+| 5 | Bunkers: four corner pockets | new |
+| 6 | A box with four gates | new |
+| 7 | Pinwheel | new |
+| 8 | A big plus sign | new |
+| 9 | Inner box | original |
+| 10 | Diamond | new |
+| 11 | Crossed diagonals | new |
+| 12 | Offset bars | original |
+| 13 | Diagonals | original |
+| 14 | Fortress | new |
+| 15 | Corridors | original |
+| 16 | Dotted columns | original |
+| 17 | Pillars | new |
+| 18 | Comb | original |
+| 19 | Serpentine | new |
+| 20 | Nested boxes | new |
 
 After level 20 the game ends with a victory screen (**After last level**: ENDING), or the levels
 start again (ENDLESS) and, with "Faster each level" switched on, the game keeps getting faster.
@@ -282,6 +293,14 @@ Instead of the command line you can also open `NIBBLESD.BAS` in the QB64-PE edit
 ## History
 
 Newest version first.
+
+### Version 9 - 2026-10-15
+
+- The 20 levels are now played in order from easy to hard (the level numbers changed; see the
+  table in the Levels section)
+- The settings menu no longer flickers: only the lines that change are redrawn, and each line
+  is written in one piece
+- Typing a player name no longer flickers either
 
 ### Version 8 - 2026-10-14
 

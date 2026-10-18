@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 8
-'  2026-10-14
+'  Version 9
+'  2026-10-15
 '
 '  Written for QuickBASIC 4.5 (QB45); it also runs in QBasic 1.1 and QB64-PE.
 '  For detailed information, please refer to the README.md file.
@@ -74,6 +74,7 @@ DECLARE SUB DrawItems ()
 DECLARE SUB DrawTable (r0, hl1, hl2, baseAttr, hlAttr)
 DECLARE SUB DrawMenu (sel)
 DECLARE SUB DrawMenuFrame ()
+DECLARE SUB DrawMenuRow (i, sel)
 DECLARE SUB DrawMenuHint ()
 DECLARE SUB EditName (who)
 DECLARE SUB EraseSnake (a)
@@ -115,7 +116,7 @@ CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGCHAR = 9         'character used for an egg
-CONST VERSIONTXT = "VERSION 8"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 9"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -136,6 +137,7 @@ DIM SHARED eggRow(1 TO MAXEGG), eggCol(1 TO MAXEGG)
 DIM SHARED fxRow(1 TO MAXFIX), fxCol(1 TO MAXFIX)     'fixed mines
 DIM SHARED bfsDist(1 TO 50, 1 TO 80), bfsQ(0 TO 3999)   'path search for the heart
 DIM SHARED hiName$
+DIM SHARED lvOrder(1 TO NUMLEVELS)                 'level order, easy to hard
 DIM SHARED hsName$(1 TO 10), hsLevel(1 TO 10), hsCount, rankOf(1 TO 2)
 DIM SHARED hsScore(1 TO 10) AS LONG                 'high score table
 DIM SHARED nm$(1 TO 2)
@@ -165,6 +167,18 @@ nm$(1) = "SAMMY": nm$(2) = "JAKE"
 numPlayers = 1: speedSet = 5: speedUp = TRUE
 startLevel = 1: theme = 1: soundOn = TRUE: mineMode = 4: doorsOn = TRUE
 wallStone = TRUE: endMode = 1
+
+'Level order from easy to hard.  The numbers are the level definitions in
+'the Level SUB:  1 empty arena, 2 centre bar, 3 two columns, 7 fence,
+'13 bunkers, 11 box with gates, 14 pinwheel, 12 plus sign, 5 inner box,
+'15 diamond, 18 crossed diagonals, 4 offset bars, 9 diagonals, 19 fortress,
+'6 corridors, 10 dotted columns, 16 pillars, 8 comb, 17 serpentine,
+'20 nested boxes.
+lvOrder(1) = 1: lvOrder(2) = 2: lvOrder(3) = 3: lvOrder(4) = 7
+lvOrder(5) = 13: lvOrder(6) = 11: lvOrder(7) = 14: lvOrder(8) = 12
+lvOrder(9) = 5: lvOrder(10) = 15: lvOrder(11) = 18: lvOrder(12) = 4
+lvOrder(13) = 9: lvOrder(14) = 19: lvOrder(15) = 6: lvOrder(16) = 10
+lvOrder(17) = 16: lvOrder(18) = 8: lvOrder(19) = 17: lvOrder(20) = 20
 LoadConfig
 ApplyTheme
 LoadHigh
@@ -797,84 +811,10 @@ SUB DrawItems
 END SUB
 
 'DrawMenu:
-'  Draws the settings menu, sel is the highlighted line
+'  Draws the whole settings menu (the frame is drawn by DrawMenuFrame)
 SUB DrawMenu (sel)
     FOR i = 1 TO 15
-        r = 8 + i
-        IF i = sel THEN attr = 0 + 7 * 16 ELSE attr = 7
-        FillRect r, 19, r, 62, 32, attr
-        SELECT CASE i
-            CASE 1: lab$ = "Players"
-            CASE 2: lab$ = "Speed"
-            CASE 3: lab$ = "Faster each level"
-            CASE 4: lab$ = "Start level"
-            CASE 5: lab$ = "Colors"
-            CASE 6: lab$ = "Sound"
-            CASE 7: lab$ = "Mines"
-            CASE 8: lab$ = "Doors"
-            CASE 9: lab$ = "Walls"
-            CASE 10: lab$ = "After last level"
-            CASE 11: lab$ = "Player 1 name"
-            CASE 12: lab$ = "Player 2 name"
-            CASE 13: lab$ = "High scores"
-            CASE ELSE: lab$ = ""
-        END SELECT
-        SELECT CASE i
-            CASE 1
-                IF numPlayers = 1 THEN v$ = "1 PLAYER" ELSE v$ = "2 PLAYERS"
-            CASE 2
-                v$ = STRING$(speedSet, 219) + STRING$(10 - speedSet, 176) + STR$(speedSet)
-            CASE 3
-                IF speedUp THEN v$ = "ON" ELSE v$ = "OFF"
-            CASE 4
-                v$ = LTRIM$(STR$(startLevel))
-            CASE 5
-                SELECT CASE theme
-                    CASE 1: v$ = "CLASSIC"
-                    CASE 2: v$ = "NIGHT"
-                    CASE 3: v$ = "FOREST"
-                    CASE 4: v$ = "OCEAN"
-                    CASE ELSE: v$ = "DESERT"
-                END SELECT
-            CASE 6
-                IF soundOn THEN v$ = "ON" ELSE v$ = "OFF"
-            CASE 7
-                SELECT CASE mineMode
-                    CASE 1: v$ = "OFF"
-                    CASE 2: v$ = "RANDOM"
-                    CASE 3: v$ = "FIXED"
-                    CASE ELSE: v$ = "BOTH"
-                END SELECT
-            CASE 8
-                IF doorsOn THEN v$ = "ON" ELSE v$ = "OFF"
-            CASE 9
-                IF wallStone THEN v$ = "STONE" ELSE v$ = "PLAIN"
-            CASE 10
-                IF endMode = 1 THEN v$ = "ENDING" ELSE v$ = "ENDLESS"
-            CASE 11
-                v$ = nm$(1)
-            CASE 12
-                v$ = nm$(2)
-            CASE ELSE
-                v$ = ""
-        END SELECT
-        IF i <= 13 THEN
-            PutStr r, 22, lab$, attr
-            IF i = sel THEN
-                IF i >= 11 THEN
-                    v$ = v$ + "  [ENTER]"
-                ELSE
-                    v$ = CHR$(17) + " " + v$ + " " + CHR$(16)
-                END IF
-                PutStr r, 42, v$, attr
-            ELSE
-                PutStr r, 44, v$, 15
-            END IF
-        ELSEIF i = 14 THEN
-            Center r, "S T A R T   G A M E", attr
-        ELSE
-            Center r, "Q U I T", attr
-        END IF
+        DrawMenuRow i, sel
     NEXT i
 END SUB
 
@@ -894,6 +834,92 @@ END SUB
 SUB DrawMenuHint
     FillRect 25, 1, 25, 80, 32, 7
     Center 25, "UP/DOWN select    LEFT/RIGHT change    ENTER start    ESC quit", 7
+END SUB
+
+'DrawMenuRow:
+'  Draws one line of the settings menu.  Every part of the line is written
+'  with a single PutStr, so nothing flickers.  sel = highlighted line.
+SUB DrawMenuRow (i, sel)
+    r = 8 + i
+    SELECT CASE i
+        CASE 1: lab$ = "Players"
+        CASE 2: lab$ = "Speed"
+        CASE 3: lab$ = "Faster each level"
+        CASE 4: lab$ = "Start level"
+        CASE 5: lab$ = "Colors"
+        CASE 6: lab$ = "Sound"
+        CASE 7: lab$ = "Mines"
+        CASE 8: lab$ = "Doors"
+        CASE 9: lab$ = "Walls"
+        CASE 10: lab$ = "After last level"
+        CASE 11: lab$ = "Player 1 name"
+        CASE 12: lab$ = "Player 2 name"
+        CASE 13: lab$ = "High scores"
+        CASE ELSE: lab$ = ""
+    END SELECT
+    SELECT CASE i
+        CASE 1
+            IF numPlayers = 1 THEN v$ = "1 PLAYER" ELSE v$ = "2 PLAYERS"
+        CASE 2
+            v$ = STRING$(speedSet, 219) + STRING$(10 - speedSet, 176) + STR$(speedSet)
+        CASE 3
+            IF speedUp THEN v$ = "ON" ELSE v$ = "OFF"
+        CASE 4
+            v$ = LTRIM$(STR$(startLevel))
+        CASE 5
+            SELECT CASE theme
+                CASE 1: v$ = "CLASSIC"
+                CASE 2: v$ = "NIGHT"
+                CASE 3: v$ = "FOREST"
+                CASE 4: v$ = "OCEAN"
+                CASE ELSE: v$ = "DESERT"
+            END SELECT
+        CASE 6
+            IF soundOn THEN v$ = "ON" ELSE v$ = "OFF"
+        CASE 7
+            SELECT CASE mineMode
+                CASE 1: v$ = "OFF"
+                CASE 2: v$ = "RANDOM"
+                CASE 3: v$ = "FIXED"
+                CASE ELSE: v$ = "BOTH"
+            END SELECT
+        CASE 8
+            IF doorsOn THEN v$ = "ON" ELSE v$ = "OFF"
+        CASE 9
+            IF wallStone THEN v$ = "STONE" ELSE v$ = "PLAIN"
+        CASE 10
+            IF endMode = 1 THEN v$ = "ENDING" ELSE v$ = "ENDLESS"
+        CASE 11
+            v$ = nm$(1)
+        CASE 12
+            v$ = nm$(2)
+        CASE ELSE
+            v$ = ""
+    END SELECT
+
+    IF i <= 13 THEN
+        IF i = sel THEN
+            IF i >= 11 THEN
+                v$ = v$ + "  [ENTER]"
+            ELSE
+                v$ = CHR$(17) + " " + v$ + " " + CHR$(16)
+            END IF
+            ln$ = SPACE$(44)
+            MID$(ln$, 4) = lab$
+            MID$(ln$, 24) = v$
+            PutStr r, 19, ln$, 112
+        ELSE
+            ln$ = SPACE$(25)
+            MID$(ln$, 4) = lab$
+            PutStr r, 19, ln$, 7
+            PutStr r, 44, LEFT$(v$ + SPACE$(19), 19), 15
+        END IF
+    ELSE
+        IF i = 14 THEN txt$ = "S T A R T   G A M E" ELSE txt$ = "Q U I T"
+        ln$ = SPACE$(44)
+        MID$(ln$, (44 - LEN(txt$)) \ 2 + 1) = txt$
+        IF i = sel THEN PutStr r, 19, ln$, 112 ELSE PutStr r, 19, ln$, 7
+    END IF
 END SUB
 
 'DrawTable:
@@ -932,8 +958,7 @@ SUB EditName (who)
     n$ = ""
     cancelled = FALSE
     DO
-        PutStr r, 42, SPACE$(14), 112
-        PutStr r, 42, n$ + "_", 112
+        PutStr r, 42, LEFT$(n$ + "_" + SPACE$(14), 14), 112
         DO
             k$ = INKEY$
         LOOP WHILE k$ = ""
@@ -1111,7 +1136,7 @@ SUB Level (what)
         Wall r, 80
     NEXT r
 
-    lv = ((curLevel - 1) MOD NUMLEVELS) + 1
+    lv = lvOrder(((curLevel - 1) MOD NUMLEVELS) + 1)
     SELECT CASE lv
         CASE 1
             sammy(1).row = 25: sammy(2).row = 25
@@ -1502,15 +1527,18 @@ SUB LoadHigh
 END SUB
 
 'MainMenu:
-'  Settings menu.  Returns TRUE to start a game, FALSE to quit
+'  Settings menu.  Returns TRUE to start a game, FALSE to quit.
+'  Only the lines that change are redrawn.
 FUNCTION MainMenu
     DrawMenuFrame
     sel = 14
+    DrawMenu sel
     DO
-        DrawMenu sel
         DO
             k$ = INKEY$
         LOOP WHILE k$ = ""
+        old = sel
+        full = FALSE
         SELECT CASE k$
             CASE CHR$(0) + "H"
                 sel = sel - 1
@@ -1531,6 +1559,7 @@ FUNCTION MainMenu
                 ELSEIF sel = 13 THEN
                     ShowScores
                     DrawMenuFrame
+                    full = TRUE
                 END IF
             CASE CHR$(13)
                 IF sel = 11 OR sel = 12 THEN
@@ -1539,6 +1568,7 @@ FUNCTION MainMenu
                 ELSEIF sel = 13 THEN
                     ShowScores
                     DrawMenuFrame
+                    full = TRUE
                 ELSE
                     IF sel = 15 THEN MainMenu = FALSE ELSE MainMenu = TRUE
                     EXIT DO
@@ -1547,6 +1577,12 @@ FUNCTION MainMenu
                 MainMenu = FALSE
                 EXIT DO
         END SELECT
+        IF full THEN
+            DrawMenu sel
+        ELSE
+            IF old <> sel THEN DrawMenuRow old, sel
+            DrawMenuRow sel, sel
+        END IF
     LOOP
 END FUNCTION
 
