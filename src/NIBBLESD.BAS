@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 9
-'  2026-10-15
+'  Version 10
+'  2026-10-16
 '
 '  Written for QuickBASIC 4.5 (QB45); it also runs in QBasic 1.1 and QB64-PE.
 '  For detailed information, please refer to the README.md file.
@@ -116,7 +116,7 @@ CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGCHAR = 9         'character used for an egg
-CONST VERSIONTXT = "VERSION 9"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 10"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -297,21 +297,42 @@ SUB ApplyTheme
 END SUB
 
 'AskYesNo:
-'  Small yes/no box, returns TRUE for Y
+'  Small Yes / No menu: arrow keys + ENTER, or Y / N.  ESC = No.
+'  Returns TRUE for Yes.
 FUNCTION AskYesNo (msg$)
     w = LEN(msg$) + 8
     IF w < 30 THEN w = 30
     c1 = (80 - w) \ 2 + 1
     c2 = c1 + w - 1
     attr = pal(5) + pal(6) * 16
+    hl = 7 * 16                               'highlighted option
     DrawBox 8, c1, 12, c2, attr
     Center 9, msg$, attr
-    Center 11, "[Y] Yes        [N] No", attr
+    cy = (80 - 17) \ 2 + 1
+    sel = 2                                   '1 = Yes, 2 = No (safe default)
     DO WHILE INKEY$ <> "": LOOP
     DO
-        k$ = UCASE$(INKEY$)
-    LOOP UNTIL k$ = "Y" OR k$ = "N" OR k$ = CHR$(27)
-    AskYesNo = (k$ = "Y")
+        IF sel = 1 THEN ay = hl ELSE ay = attr
+        IF sel = 2 THEN an = hl ELSE an = attr
+        PutStr 11, cy, "  Yes  ", ay
+        PutStr 11, cy + 11, "  No  ", an
+        DO
+            k$ = INKEY$
+        LOOP WHILE k$ = ""
+        SELECT CASE k$
+            CASE CHR$(0) + "K", CHR$(0) + "M", CHR$(0) + "H", CHR$(0) + "P", CHR$(9)
+                sel = 3 - sel
+            CASE "y", "Y"
+                sel = 1
+                EXIT DO
+            CASE "n", "N", CHR$(27)
+                sel = 2
+                EXIT DO
+            CASE CHR$(13)
+                EXIT DO
+        END SELECT
+    LOOP
+    AskYesNo = (sel = 1)
     RedrawRows 7, 13
 END FUNCTION
 
@@ -522,7 +543,8 @@ SUB DelayMs (ms)
 END SUB
 
 'Dialog:
-'  Message box in the upper part of the screen, waits for SPACE or ENTER
+'  Message box in the upper part of the screen, waits for SPACE or ENTER.
+'  ESC asks "Quit to the menu?" (Yes sets abortGame, No shows the box again)
 SUB Dialog (t1$, t2$, hint$)
     w = LEN(t1$)
     IF LEN(t2$) > w THEN w = LEN(t2$)
@@ -532,14 +554,25 @@ SUB Dialog (t1$, t2$, hint$)
     c1 = (80 - w) \ 2 + 1
     c2 = c1 + w - 1
     attr = pal(5) + pal(6) * 16
-    DrawBox 8, c1, 12, c2, attr
-    Center 9, t1$, attr
-    Center 10, t2$, attr
-    Center 11, hint$, attr
     DO WHILE INKEY$ <> "": LOOP
+    done = FALSE
     DO
-        k$ = INKEY$
-    LOOP UNTIL k$ = " " OR k$ = CHR$(13)
+        DrawBox 8, c1, 12, c2, attr
+        Center 9, t1$, attr
+        Center 10, t2$, attr
+        Center 11, hint$, attr
+        DO
+            k$ = INKEY$
+        LOOP UNTIL k$ = " " OR k$ = CHR$(13) OR k$ = CHR$(27)
+        IF k$ = CHR$(27) THEN
+            IF AskYesNo("Quit to the menu?") THEN
+                abortGame = TRUE
+                done = TRUE
+            END IF
+        ELSE
+            done = TRUE
+        END IF
+    LOOP UNTIL done
     RedrawRows 7, 13
 END SUB
 
@@ -918,7 +951,12 @@ SUB DrawMenuRow (i, sel)
         IF i = 14 THEN txt$ = "S T A R T   G A M E" ELSE txt$ = "Q U I T"
         ln$ = SPACE$(44)
         MID$(ln$, (44 - LEN(txt$)) \ 2 + 1) = txt$
-        IF i = sel THEN PutStr r, 19, ln$, 112 ELSE PutStr r, 19, ln$, 7
+        IF i = 14 THEN
+            IF i = sel THEN ta = 15 + 2 * 16 ELSE ta = 10      'green START GAME
+        ELSE
+            IF i = sel THEN ta = 112 ELSE ta = 7
+        END IF
+        PutStr r, 19, ln$, ta
     END IF
 END SUB
 
@@ -1710,6 +1748,7 @@ SUB PlayNibbles
 
     gameOver = FALSE
     DO
+        IF abortGame THEN EXIT DO                'ESC in a message box
         'speed of this level
         stepMs = 180 - speedSet * 16
         IF speedUp THEN stepMs = INT(stepMs * .93 ^ (curLevel - startLevel))
@@ -1792,6 +1831,7 @@ SUB PlayNibbles
                 Dialog "ALL" + STR$(NUMLEVELS) + " LEVELS COMPLETE!", "Life bonus: 1000 per life", "Press SPACE"
             ELSE
                 Dialog "LEVEL COMPLETE!", "Bonus +500 points", "Press SPACE"
+                IF abortGame THEN EXIT DO
                 Level NEXTLEVEL
                 DrawHud
                 Dialog "L E V E L" + STR$(curLevel), "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to start"
@@ -1892,6 +1932,7 @@ SUB ReadKeys
                 QueueTurn numPlayers, 4
             CASE "p", "P"
                 Dialog "G A M E   P A U S E D", "", "Press SPACE to continue"
+                IF abortGame THEN EXIT DO
             CASE CHR$(27)
                 IF AskYesNo("Quit to the menu?") THEN
                     abortGame = TRUE

@@ -111,8 +111,8 @@ a folder that is write-protected.
 | Arrow keys (or keypad 8 2 4 6) | Player 1 steers |
 | W A S D | Player 2 steers (in one player mode they steer player 1, too) |
 | P | Pause |
-| ESC | Quit to the menu (asks Yes / No) |
-| SPACE or ENTER | Close a message box |
+| ESC | Quit to the menu (asks Yes / No: arrow keys + ENTER, or Y / N; the default is No) |
+| SPACE or ENTER | Close a message box (ESC in a message box also offers to quit to the menu) |
 
 Menus: UP / DOWN select a line, LEFT / RIGHT (or SPACE) change a setting, ENTER starts the
 game (on the two name lines ENTER lets you type a name, on the **High scores** line it shows the
@@ -293,6 +293,14 @@ Instead of the command line you can also open `NIBBLESD.BAS` in the QB64-PE edit
 ## History
 
 Newest version first.
+
+### Version 10 - 2026-10-16
+
+- The Yes / No question (quit to the menu) is now a small menu: select with the arrow keys or
+  TAB and confirm with ENTER, or press Y / N; ESC means No, and No is preselected
+- ESC now also works in the message boxes (level start, pause, level complete ...): it asks
+  "Quit to the menu?" and, if you say No, shows the box again
+- The **START GAME** line of the settings menu is green
 
 ### Version 9 - 2026-10-15
 
