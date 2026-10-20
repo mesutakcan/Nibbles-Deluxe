@@ -11,14 +11,15 @@ An improved version of the classic **Microsoft QBasic Nibbles** (1990), written 
 **QuickBASIC 4.5**. One or two players steer snakes around an arena, collect all the eggs
 and try to stay alive.
 
-The game runs in DOS / DOSBox (QuickBASIC 4.5 or QBasic 1.1), and also natively on
+The game runs in DOS / DOSBox (compiled with QuickBASIC 4.5), and also natively on
 **Windows** (32 bit and 64 bit), compiled with
 [QB64 Phoenix Edition](https://github.com/QB64-Phoenix-Edition/QB64pe).
 
 ![Nibbles Deluxe SS 1](docs/screenshot_1.png)
 
-The game is published version by version; every version has its own release. The BASIC file is
-always called `NIBBLESD.BAS`.
+The game is published version by version; every version has its own release. The BASIC source
+consists of two modules for QuickBASIC 4.5, always called `NIBBLESD.BAS` (the main module) and
+`NIBBLEUI.BAS`, and of `NIBBLESD_ALL.BAS`, the same code in one file for QB64-PE.
 
 ## Features
 
@@ -44,9 +45,9 @@ always called `NIBBLESD.BAS`.
 - Top 10 high score table with names, scores and levels; the live high score is shown in the
   status line during play
 - Settings and names are saved to `NIBBLES.CFG`; the high score table is saved to `NIBBLES.HI`
-- The game can end after level 20 with a victory screen and a life bonus, or go on endlessly
+- The game can end after level 25 with a victory screen and a life bonus, or go on endlessly
 - The game speed is calibrated at start-up, so it plays the same on any computer
-- 20 levels (the 10 original levels plus 10 new ones)
+- 25 levels (the 10 original levels plus 15 new ones), including 5 divided arenas that can only be crossed through the side doors
 - Runs in DOS / DOSBox and natively on Windows (32 bit and 64 bit)
 
 ![Nibbles Deluxe SS 2](docs/screenshot_2.png)
@@ -68,15 +69,16 @@ systems. Windows may show a SmartScreen warning for a program that is downloaded
 internet and is not signed; the source code of the game is in the [`src`](src) folder, and you
 can compile it yourself (see below).
 
-The BASIC source is in the [`src`](src) folder.
+The BASIC source (`NIBBLESD.BAS`, `NIBBLEUI.BAS` and `NIBBLESD_ALL.BAS`) is in the [`src`](src)
+folder.
 
 ## Requirements
 
 - **Windows version:** Windows with the x86 or x64 file; nothing else is needed.
 - **DOS version:** a VGA colour display (DOS, or an emulator such as DOSBox).
-- **To run the source:** QuickBASIC 4.5 (QB45), QBasic 1.1, or QB64-PE
+- **To run or build the source:** QuickBASIC 4.5 (QB45) or QB64-PE
 
-The game was developed and tested with QuickBASIC 4.5 in DOSBox. The source has also been tested and runs in QBasic 1.1 and QB64-PE. The Windows builds are compiled with QB64-PE on Windows 11 and run there without an emulator.
+The game was developed and tested with QuickBASIC 4.5 in DOSBox. The source also builds with QB64-PE. The Windows builds are compiled with QB64-PE on Windows 11 and run there without an emulator.
 
 ## How to run
 
@@ -101,8 +103,17 @@ a folder that is write-protected.
 
 **The source in QB45**
 
-1. Copy `src/NIBBLESD.BAS` to your QB45 folder.
-2. Start QB45, open the file and press **F5**, or run `QB NIBBLESD.BAS /RUN`.
+1. Copy `src/NIBBLESD.BAS` and `src/NIBBLEUI.BAS` to your QB45 folder.
+2. Start QB45 and open `NIBBLESD.BAS`, then load the second module with **File > Load File...**
+   (`NIBBLEUI.BAS`). `NIBBLESD.BAS` has to be the main module.
+3. Press **F5** to run the game.
+4. Choose **File > Save All**. QB45 creates `NIBBLESD.MAK`, so the next time you can start both
+   modules at once with `QB NIBBLESD.MAK`.
+
+**The source in QB64-PE**
+
+1. Open `src/NIBBLESD_ALL.BAS` in the QB64-PE editor (this one file holds the whole game).
+2. Press **F5** (**Run > Start**).
 
 ## Controls
 
@@ -133,7 +144,7 @@ snakes die.
   lives). There is one heart per level. If you take the last egg first, the level ends and
   the heart is lost.
 - **Level complete**: 500 bonus points.
-- **Last level**: with **After last level** set to ENDING, finishing level 20 ends the game with a
+- **Last level**: with **After last level** set to ENDING, finishing level 25 ends the game with a
   victory screen and a bonus of 1000 points for every life you have left.
 - **Lives**: 5 for every player. The heart in the status line blinks when only one life is
   left. The game is over when a player has no life left. With two players the higher score
@@ -144,7 +155,8 @@ snakes die.
 blink twice as a warning, open and stay open for about 10 seconds, then blink again and close.
 A snake that enters an open door leaves the arena on the other side, like in Pac-Man. The doors
 never open in front of walls, snakes, eggs or mines, and they wait to close while a snake is
-still inside the gap. They can be switched off with the **Doors** setting.
+still inside the gap. They can be switched off with the **Doors** setting, except on the divided
+levels 21 to 25, where they always work (see Levels).
 
 If a snake crashes, the level starts again with the same walls. Red mines may appear
 randomly after an egg is eaten. There can be up to three mines on screen at once, never
@@ -161,8 +173,8 @@ in turn, the snake is wiped out from head to tail, or both one after the other).
 
 ## Levels
 
-20 levels with different walls, played from easy to hard. Ten of them are the original
-Nibbles levels, ten are new. The number is the play order (the **Start level** setting uses it
+25 levels with different walls, played from easy to hard. Ten of them are the original
+Nibbles levels, fifteen are new. The number is the play order (the **Start level** setting uses it
 too).
 
 | Level | Walls | Origin |
@@ -187,8 +199,18 @@ too).
 | 18 | Comb | original |
 | 19 | Serpentine | new |
 | 20 | Nested boxes | new |
+| 21 | Divide: a wall splits the arena | new |
+| 22 | Zigzag: a zigzag wall splits the arena | new |
+| 23 | Bulge: a wall with a bulge splits the arena | new |
+| 24 | Crossbars: a thick wall with crossbars | new |
+| 25 | Citadel: a very thick wall with bunkers | new |
 
-After level 20 the game ends with a victory screen (**After last level**: ENDING), or the levels
+On the **divided levels 21 to 25** a wall splits the arena into a left and a right half, and
+the side doors are the only way over. The doors work on these levels even when the **Doors**
+setting is OFF, and they open much more often (every 5 to 11 seconds instead of every 10 to 25).
+The game moves any egg that could not be reached, even through the doors, to a reachable spot.
+
+After level 25 the game ends with a victory screen (**After last level**: ENDING), or the levels
 start again (ENDLESS) and, with "Faster each level" switched on, the game keeps getting faster.
 
 ## Settings
@@ -198,7 +220,7 @@ start again (ENDLESS) and, with "Faster each level" switched on, the game keeps 
 | Players | 1 or 2 |
 | Speed | 1 to 10 |
 | Faster each level | ON / OFF |
-| Start level | 1 to 20 |
+| Start level | 1 to 25 |
 | Colors | CLASSIC, NIGHT, FOREST, OCEAN, DESERT |
 | Sound | ON / OFF |
 | Mines | OFF, RANDOM, FIXED, BOTH |
@@ -225,6 +247,24 @@ Both files are written to the current directory and keep these names in every ve
 whatever the program file is called. Delete them to start fresh. A `NIBBLES.HI` file from
 an earlier version (a single score) can still be read.
 
+## Source files
+
+| File | Content |
+| --- | --- |
+| `NIBBLESD.BAS` | QuickBASIC 4.5, main module: game logic, sound, file access (settings and high scores) |
+| `NIBBLEUI.BAS` | QuickBASIC 4.5, second module: screens, menus, drawing helpers and the 25 level layouts |
+| `NIBBLESD_ALL.BAS` | QB64-PE: the code of both modules merged into one file |
+
+**Why two modules for QuickBASIC 4.5?** As a single file the game became too big for the
+QuickBASIC 4.5 compiler (BC stops with "Out of memory"). So the source is split into two
+modules that are compiled separately and then linked. Both modules declare the variables they
+share with identical `COMMON SHARED` blocks, and both are needed to run or build the game.
+
+**Why one merged file for QB64-PE?** QB64-PE builds a program from a single source file; it has
+no way to link separate modules. `NIBBLESD_ALL.BAS` is the same code as the two modules, put
+into one file (the `COMMON SHARED` lines became `DIM SHARED`). It runs and compiles by itself, so
+`NIBBLESD.BAS` alone does not work in QB64-PE. If you change the game, change both versions.
+
 ## Building the EXE
 
 You can build the game yourself in two ways: with QuickBASIC 4.5 for DOS, or with QB64-PE
@@ -232,33 +272,37 @@ for Windows.
 
 ### DOS EXE with QuickBASIC 4.5
 
-In QB45: open `NIBBLESD.BAS`, choose **Run > Make EXE File**, select **Stand-Alone EXE File**
-and press **Make EXE**.
+In QB45: open `NIBBLESD.BAS` and load `NIBBLEUI.BAS` with **File > Load** (or open `NIBBLESD.MAK`,
+see above), choose **Run > Make EXE File**, select **Stand-Alone EXE File** and press **Make EXE**.
+QB45 compiles both modules and links them.
 
 ![Make EXE File SS](docs/ss_make_exe_file.png)
 
-From the command line (QB45 tools). The program uses `ON ERROR ... RESUME NEXT` for the
-file access, so it has to be compiled with `/E` and `/X`:
+From the command line (QB45 tools): compile each module with `BC`, then link the two object
+files. The main module uses `ON ERROR ... RESUME NEXT` for the file access, so it has to be
+compiled with `/E` and `/X`:
 
 ```
 BC NIBBLESD.BAS /E/X/O/T/C:512;
-LINK /EX NIBBLESD.OBJ,NIBBLESD.EXE,NUL,BCOM45.LIB;
+BC NIBBLEUI.BAS /O/T/C:512;
+LINK /EX NIBBLESD.OBJ+NIBBLEUI.OBJ,NIBBLESD.EXE,NUL,BCOM45.LIB;
 ```
 
-`/E` and `/X` support `ON ERROR` and `RESUME`, `/O` makes a stand-alone program, `/T`
-suppresses warning messages, `/C:512` sets the communications buffer size, and `LINK /EX`
-packs the EXE file. Run both commands in the folder that holds `NIBBLESD.BAS` and
-`BCOM45.LIB` (or give full paths).
+`/E` and `/X` support `ON ERROR` and `RESUME` (only `NIBBLESD.BAS` needs them), `/O` makes a
+stand-alone program, `/T` suppresses warning messages, `/C:512` sets the communications buffer
+size, the `+` in the `LINK` line joins the two modules, and `LINK /EX` packs the EXE file. Run the
+commands in the folder that holds both `.BAS` files and `BCOM45.LIB` (or give full paths).
 
-In DOSBox you can start the same commands from the
-`mount`ed QB45 folder, for example `C:\QB45\BC.EXE C:\QB45\NIBBLES\SRC\NIBBLESD.BAS/E/X/O/T/C:512;`
-followed by `C:\QB45\LINK.EXE /EX NIBBLESD.OBJ,NIBBLESD.EXE,NUL,C:\QB45\LIB\BCOM45.LIB;`.
+In DOSBox you can start the same commands from the `mount`ed QB45 folder, for example
+`C:\QB45\BC.EXE C:\QB45\NIBBLES\SRC\NIBBLESD.BAS/E/X/O/T/C:512;` and
+`C:\QB45\BC.EXE C:\QB45\NIBBLES\SRC\NIBBLEUI.BAS/O/T/C:512;`, followed by
+`C:\QB45\LINK.EXE /EX NIBBLESD.OBJ+NIBBLEUI.OBJ,NIBBLESD.EXE,NUL,C:\QB45\LIB\BCOM45.LIB;`.
 
 ### Windows EXE (32 bit and 64 bit) with QB64-PE
 
 [QB64 Phoenix Edition](https://github.com/QB64-Phoenix-Edition/QB64pe) is a modern compiler
-that accepts QuickBASIC code and creates native Windows programs. The source of Nibbles
-Deluxe compiles unchanged.
+that accepts QuickBASIC code and creates native Windows programs. Compile the merged file
+`NIBBLESD_ALL.BAS`.
 
 1. Download QB64-PE from its
    [releases page](https://github.com/QB64-Phoenix-Edition/QB64pe/releases) and unpack it to
@@ -271,7 +315,7 @@ Deluxe compiles unchanged.
 
    ```powershell
    $QB64 = "C:\qb64pe\qb64pe.exe"
-   $SRC  = "C:\nibbles\src\NIBBLESD.BAS"
+   $SRC  = "C:\nibbles\src\NIBBLESD_ALL.BAS"
    $OUT  = "C:\nibbles\Nibbles-Deluxe-x64.exe"
    & $QB64 -c "$SRC" "-f:TargetBits=64" -o "$OUT"
    ```
@@ -280,19 +324,33 @@ Deluxe compiles unchanged.
 
    ```powershell
    $QB64 = "C:\qb64pe\qb64pe.exe"
-   $SRC  = "C:\nibbles\src\NIBBLESD.BAS"
+   $SRC  = "C:\nibbles\src\NIBBLESD_ALL.BAS"
    $OUT  = "C:\nibbles\Nibbles-Deluxe-x86.exe"
    & $QB64 -c "$SRC" "-f:TargetBits=32" -o "$OUT"
    ```
 
 3. Start the new EXE file with a double-click.
 
-Instead of the command line you can also open `NIBBLESD.BAS` in the QB64-PE editor and use
+Instead of the command line you can also open `NIBBLESD_ALL.BAS` in the QB64-PE editor and use
 **Run > Make EXE Only**. The command line version is handy for building both files in one go.
 
 ## History
 
 Newest version first.
+
+### Version 11 - 2026-10-17
+
+- 5 new levels, for 25 levels in total: the divided arenas 21 (divide), 22 (zigzag), 23 (bulge),
+  24 (crossbars) and 25 (citadel); a wall splits the arena in two halves and the side doors are
+  the only way over
+- On divided levels the doors always work (even with **Doors** OFF) and open much sooner
+- Eggs that nobody could reach are moved to a reachable spot; the path search for the eggs and
+  the fixed mines now counts routes through the side doors
+- The **Start level** setting goes from 1 to 25; the game ends after level 25 (ENDING)
+- The **QUIT** line of the settings menu is red
+- The source is split into two modules, `NIBBLESD.BAS` and `NIBBLEUI.BAS`, because the single
+  file became too big for the QuickBASIC 4.5 compiler ("Out of memory"); QB64-PE uses the same
+  code merged into one file, `NIBBLESD_ALL.BAS` (see **Source files** and **Building the EXE**)
 
 ### Version 10 - 2026-10-16
 
