@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 11
-'  2026-10-17
+'  Version 12
+'  2026-10-18
 '
 '  Written for QuickBASIC 4.5 (QB45), in two modules (NIBBLESD.BAS + NIBBLEUI.BAS).
 '  QB64-PE builds NIBBLESD_ALL.BAS, the same code merged into one file.
@@ -14,6 +14,7 @@
 
 '$DYNAMIC
 DEFINT A-Z
+
 
 '---- User defined types ----------------------------------------------------
 TYPE snakeBody
@@ -35,50 +36,54 @@ TYPE snakeType
 END TYPE
 
 '---- Sub declarations --------------------------------------------------------
-DECLARE SUB AddScore (a, pts)
 DECLARE FUNCTION AddToTable (n$, sc&, lv)
-DECLARE SUB ApplyTheme ()
 DECLARE FUNCTION AskYesNo (msg$)
-DECLARE SUB BlinkHud ()
 DECLARE FUNCTION BodyColor (a, idx)
-DECLARE SUB Calibrate ()
 DECLARE FUNCTION CellBusy (rr, cc)
-DECLARE SUB Center (row, text$, attr)
 DECLARE FUNCTION CleanName$ (n$, dflt$)
+DECLARE FUNCTION DoorFree (mask)
+DECLARE FUNCTION DoorPass (row)
+DECLARE FUNCTION DoorTicks (ms)
+DECLARE FUNCTION EggsReachable ()
+DECLARE FUNCTION MineSpotOk (r, c)
+DECLARE FUNCTION TryChooseDoor ()
+DECLARE FUNCTION WallColor (row, col)
+DECLARE FUNCTION GameOverScreen ()
+DECLARE FUNCTION IsWallColor (c)
+DECLARE FUNCTION ItemInRect (r1, c1, r2, c2)
+DECLARE FUNCTION MainMenu ()
+DECLARE FUNCTION Num7$ (v&)
+DECLARE FUNCTION PointIsThere (row, col)
+DECLARE SUB AddScore (a, pts)
+DECLARE SUB ApplyTheme ()
+DECLARE SUB BlinkHud ()
+DECLARE SUB Calibrate ()
+DECLARE SUB Center (row, text$, attr)
 DECLARE SUB ClearScreen (attr)
 DECLARE SUB DeathAnim (a, variant)
 DECLARE SUB DelayMs (ms)
-DECLARE SUB Dialog (t1$, t2$, hint$)
 DECLARE SUB DoorBlink (kind, flag)
-DECLARE FUNCTION DoorFree (mask)
-DECLARE FUNCTION DoorPass (row)
 DECLARE SUB DoorReset ()
 DECLARE SUB DoorSet (k, wallFlag)
 DECLARE SUB DoorTick ()
-DECLARE FUNCTION DoorTicks (ms)
-DECLARE FUNCTION DoorWaitMs ()
+DECLARE SUB Dialog (t1$, t2$, hint$)
 DECLARE SUB DrawCell (r, c)
 DECLARE SUB DrawHud ()
 DECLARE SUB DrawHudCenter (eggFg)
 DECLARE SUB DrawItems ()
-DECLARE FUNCTION EggsReachable ()
 DECLARE SUB EraseSnake (a)
 DECLARE SUB FillRect (r1, c1, r2, c2, ch, attr)
 DECLARE SUB FindCell (rr, cc)
-DECLARE SUB FixEggs ()
-DECLARE FUNCTION GameOverScreen ()
+DECLARE SUB FontClose ()
+DECLARE SUB FontOpen ()
 DECLARE SUB Intro ()
-DECLARE FUNCTION IsWallColor (c)
 DECLARE SUB Level (what)
 DECLARE SUB LoadConfig ()
+DECLARE SUB LoadEggGlyph ()
 DECLARE SUB LoadHigh ()
-DECLARE FUNCTION MainMenu ()
-DECLARE FUNCTION MineSpotOk (r, c)
-DECLARE FUNCTION Num7$ (v&)
 DECLARE SUB PlaceEggs ()
 DECLARE SUB PlaceFixedMines ()
 DECLARE SUB PlayNibbles ()
-DECLARE FUNCTION PointIsThere (row, col)
 DECLARE SUB PutChar (row, col, ch, attr)
 DECLARE SUB PutPixel (row, col, c)
 DECLARE SUB PutStr (row, col, s$, attr)
@@ -86,16 +91,18 @@ DECLARE SUB QueueTurn (who, d)
 DECLARE SUB ReadKeys ()
 DECLARE SUB RedrawRows (r1, r2)
 DECLARE SUB RunBfs (useDoors)
+DECLARE SUB FixEggs ()
+DECLARE FUNCTION DoorWaitMs ()
+DECLARE SUB RestoreEggGlyph ()
 DECLARE SUB SaveConfig ()
 DECLARE SUB SaveHigh ()
 DECLARE SUB SetBlink (flag)
+DECLARE SUB ShowWait ()
 DECLARE SUB Sfx (n)
 DECLARE SUB SpawnBonus ()
 DECLARE SUB SpawnHeart ()
 DECLARE SUB SpawnMine ()
 DECLARE SUB Tick ()
-DECLARE FUNCTION TryChooseDoor ()
-DECLARE FUNCTION WallColor (row, col)
 
 '---- Constants ---------------------------------------------------------------
 CONST TRUE = -1
@@ -106,8 +113,8 @@ CONST NUMLEVELS = 25
 CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
-CONST EGGCHAR = 9         'character used for an egg
-CONST VERSIONTXT = "VERSION 11"   'shown on the title screen
+CONST EGGGLYPH = 1        'character code redefined as a filled egg
+CONST VERSIONTXT = "VERSION 12"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -124,48 +131,34 @@ COMMON SHARED doorsOn, wallStone, endMode, bonOn, fxCount, heartOn
 COMMON SHARED heartDone, doorState, abortGame, victory, splitLevel
 
 '---- Global variables of this module only ------------------------------------
-DIM SHARED qd(1 TO 2, 1 TO 3)
-DIM SHARED minRow(1 TO MAXMINE)
-DIM SHARED minCol(1 TO MAXMINE)
+'The playfield is 80 x 50 "pixels": every text character holds two pixels
+'(upper and lower half block).  arena() stores the colour of each pixel.
+DIM SHARED qd(1 TO 2, 1 TO 3)                      'buffered turns per snake
+DIM SHARED minRow(1 TO MAXMINE), minCol(1 TO MAXMINE)
 DIM SHARED hitMine(1 TO 2)
-DIM SHARED eggRow(1 TO MAXEGG)
-DIM SHARED eggCol(1 TO MAXEGG)
-DIM SHARED fxRow(1 TO MAXFIX)
-DIM SHARED fxCol(1 TO MAXFIX)
-DIM SHARED bfsDist(1 TO 50, 1 TO 80)
-DIM SHARED bfsQ(0 TO 3999)
+DIM SHARED eggRow(1 TO MAXEGG), eggCol(1 TO MAXEGG)
+DIM SHARED fxRow(1 TO MAXFIX), fxCol(1 TO MAXFIX)     'fixed mines
+DIM SHARED bfsD(0 TO 3999), bfsQ(0 TO 3999)        'path search (one entry per pixel)
+DIM SHARED eggChr, origGlyph$
 DIM SHARED loopsPerMs AS SINGLE
-DIM SHARED bonRow
-DIM SHARED bonCol
-DIM SHARED bonTime
-DIM SHARED eggLeft
-DIM SHARED eggTotal
-DIM SHARED heartRow
-DIM SHARED heartCol
-DIM SHARED heartTime
-DIM SHARED heartMax
-DIM SHARED tickCnt
-DIM SHARED doorTimer
-DIM SHARED doorRow
-DIM SHARED newHigh
-DIM SHARED anyDead
-DIM SHARED levelDone
-DIM SHARED stepMs
-DIM SHARED fileFail
-DIM SHARED fileBusy
+DIM SHARED bonRow, bonCol, bonTime, eggLeft, eggTotal
+DIM SHARED heartRow, heartCol, heartTime, heartMax, tickCnt
+DIM SHARED doorTimer, doorRow                      'side doors
+DIM SHARED newHigh, anyDead, levelDone, stepMs
+DIM SHARED fileFail, fileBusy
 
 '---- Arrays shared with NIBBLEUI.BAS (dimensioned here, at program start) -----
-DIM arena(1 TO 50, 1 TO 80)
+DIM arena(1 TO 50, 1 TO 80)                       'colour of each pixel
 DIM sammy(1 TO 2) AS snakeType
 DIM sammyBody(0 TO MAXSNAKELENGTH - 1, 1 TO 2) AS snakeBody
 DIM qn(1 TO 2)
-DIM pal(1 TO 18)
+DIM pal(1 TO 18)                                   'colour table, see ApplyTheme
 DIM minTime(1 TO MAXMINE)
-DIM lvOrder(1 TO NUMLEVELS)
+DIM lvOrder(1 TO NUMLEVELS)                        'level order, easy to hard
 DIM hsName$(1 TO 10)
 DIM hsLevel(1 TO 10)
 DIM rankOf(1 TO 2)
-DIM hsScore(1 TO 10) AS LONG
+DIM hsScore(1 TO 10) AS LONG                       'high score table
 DIM nm$(1 TO 2)
 
 '---- Main program --------------------------------------------------------------
@@ -203,6 +196,8 @@ ApplyTheme
 LoadHigh
 SetBlink FALSE                'allows 16 background colours
 LOCATE , , 0                  'hide the cursor
+eggChr = 9                    'hollow circle unless the egg glyph can be loaded
+LoadEggGlyph
 
 ClearScreen 7
 Center 12, "Please wait...", 7
@@ -223,6 +218,7 @@ DO
     LOOP WHILE choice = 1
 LOOP UNTIL quitAll
 
+RestoreEggGlyph
 SetBlink TRUE
 COLOR 7, 0
 CLS
@@ -626,7 +622,7 @@ END SUB
 SUB DrawHudCenter (eggFg)
     hb = pal(12) * 16
     a$ = "LEVEL" + STR$(curLevel) + "   "
-    b$ = CHR$(EGGCHAR) + STR$(eggLeft)
+    b$ = CHR$(eggChr) + STR$(eggLeft)
     c$ = "   HI " + Num7$(highScore)
     sc = (80 - LEN(a$) - LEN(b$) - LEN(c$)) \ 2 + 1
     FillRect 1, 24, 1, 57, 32, pal(11) + hb
@@ -639,7 +635,7 @@ END SUB
 '  Draws the eggs, the bonus diamond, the heart and the mines
 SUB DrawItems
     FOR e = 1 TO MAXEGG
-        IF eggRow(e) > 0 THEN PutChar eggRow(e), eggCol(e), EGGCHAR, pal(9) + pal(4) * 16
+        IF eggRow(e) > 0 THEN PutChar eggRow(e), eggCol(e), eggChr, pal(9) + pal(4) * 16
     NEXT e
     IF bonOn THEN PutChar bonRow, bonCol, 4, pal(10) + pal(4) * 16
     IF heartOn THEN
@@ -660,7 +656,7 @@ FUNCTION EggsReachable
     EggsReachable = TRUE
     FOR e = 1 TO eggTotal
         IF eggRow(e) > 0 THEN
-            IF bfsDist(eggRow(e) * 2 - 1, eggCol(e)) < 0 AND bfsDist(eggRow(e) * 2, eggCol(e)) < 0 THEN EggsReachable = FALSE
+            IF bfsD((eggRow(e) * 2 - 2) * 80 + eggCol(e) - 1) < 0 AND bfsD((eggRow(e) * 2 - 1) * 80 + eggCol(e) - 1) < 0 THEN EggsReachable = FALSE
         END IF
     NEXT e
 END FUNCTION
@@ -700,7 +696,7 @@ SUB FixEggs
     FOR e = 1 TO eggTotal
         IF eggRow(e) > 0 THEN
             tries = 0
-            DO WHILE bfsDist(eggRow(e) * 2 - 1, eggCol(e)) < 0 AND bfsDist(eggRow(e) * 2, eggCol(e)) < 0 AND tries < 200
+            DO WHILE bfsD((eggRow(e) * 2 - 2) * 80 + eggCol(e) - 1) < 0 AND bfsD((eggRow(e) * 2 - 1) * 80 + eggCol(e) - 1) < 0 AND tries < 200
                 tries = tries + 1
                 eggRow(e) = 0
                 FindCell r, c
@@ -710,6 +706,50 @@ SUB FixEggs
         END IF
     NEXT e
 END SUB
+
+'FontClose:
+'  Back to the normal text mode memory layout
+SUB FontClose
+    OUT &H3C4, 2: OUT &H3C5, 3
+    OUT &H3C4, 4: OUT &H3C5, 3
+    OUT &H3CE, 4: OUT &H3CF, 0
+    OUT &H3CE, 5: OUT &H3CF, &H10
+    OUT &H3CE, 6: OUT &H3CF, &HE
+END SUB
+
+'FontOpen:
+'  Makes the character generator memory (plane 2, segment A000h) readable
+'  and writable
+SUB FontOpen
+    OUT &H3C4, 2: OUT &H3C5, 4
+    OUT &H3C4, 4: OUT &H3C5, 7
+    OUT &H3CE, 4: OUT &H3CF, 2
+    OUT &H3CE, 5: OUT &H3CF, 0
+    OUT &H3CE, 6: OUT &H3CF, 4
+END SUB
+
+'ItemInRect:
+'  TRUE if an egg, bonus, heart or mine sits inside the text cell rectangle
+FUNCTION ItemInRect (r1, c1, r2, c2)
+    ItemInRect = FALSE
+    FOR e = 1 TO eggTotal
+        IF eggRow(e) >= r1 AND eggRow(e) <= r2 AND eggCol(e) >= c1 AND eggCol(e) <= c2 THEN ItemInRect = TRUE
+    NEXT e
+    IF bonOn THEN
+        IF bonRow >= r1 AND bonRow <= r2 AND bonCol >= c1 AND bonCol <= c2 THEN ItemInRect = TRUE
+    END IF
+    IF heartOn THEN
+        IF heartRow >= r1 AND heartRow <= r2 AND heartCol >= c1 AND heartCol <= c2 THEN ItemInRect = TRUE
+    END IF
+    FOR m = 1 TO MAXMINE
+        IF minTime(m) > 0 THEN
+            IF minRow(m) >= r1 AND minRow(m) <= r2 AND minCol(m) >= c1 AND minCol(m) <= c2 THEN ItemInRect = TRUE
+        END IF
+    NEXT m
+    FOR m = 1 TO fxCount
+        IF fxRow(m) >= r1 AND fxRow(m) <= r2 AND fxCol(m) >= c1 AND fxCol(m) <= c2 THEN ItemInRect = TRUE
+    NEXT m
+END FUNCTION
 
 'LoadConfig:
 '  Reads names and menu settings from NIBBLES.CFG
@@ -756,6 +796,36 @@ SUB LoadConfig
         END IF
     END IF
     fileBusy = FALSE
+END SUB
+
+'LoadEggGlyph:
+'  Redefines character EGGGLYPH as a filled egg (8 x 16 pixels).  The
+'  result is read back; if the video card does not accept the new shape the
+'  hollow circle (character 9) stays in use.
+SUB LoadEggGlyph
+    IF vidSeg <> &HB800& THEN EXIT SUB
+    g$ = CHR$(0) + CHR$(0) + CHR$(24) + CHR$(60) + CHR$(60) + CHR$(126) + CHR$(126) + CHR$(255)
+    g$ = g$ + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(126) + CHR$(126) + CHR$(60) + CHR$(24) + CHR$(0)
+    ofs = EGGGLYPH * 32
+    old$ = ""
+    ok = TRUE
+    FontOpen
+    DEF SEG = &HA000&
+    FOR i = 0 TO 15
+        old$ = old$ + CHR$(PEEK(ofs + i))
+    NEXT i
+    FOR i = 0 TO 15
+        POKE ofs + i, ASC(MID$(g$, i + 1, 1))
+    NEXT i
+    FOR i = 0 TO 15
+        IF PEEK(ofs + i) <> ASC(MID$(g$, i + 1, 1)) THEN ok = FALSE
+    NEXT i
+    DEF SEG
+    FontClose
+    IF ok THEN
+        eggChr = EGGGLYPH
+        origGlyph$ = old$
+    END IF
 END SUB
 
 'LoadHigh:
@@ -874,7 +944,7 @@ SUB PlaceFixedMines
     FOR attempt = 1 TO 3
         fxCount = 0
         tries = 0
-        DO WHILE fxCount < want AND tries < 400
+        DO WHILE fxCount < want AND tries < 200
             tries = tries + 1
             FindCell r, c
             IF MineSpotOk(r, c) THEN
@@ -916,6 +986,7 @@ SUB PlayNibbles
     NEXT a
 
     ClearScreen pal(4) * 16 + 7
+    ShowWait
     Level STARTOVER
     DrawHud
     Dialog "L E V E L" + STR$(curLevel), "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to start"
@@ -984,9 +1055,13 @@ SUB PlayNibbles
             IF gameOver THEN
                 Dialog msg$, "No lives left!", "Press SPACE"
             ELSE
-                Level SAMELEVEL
-                DrawHud
                 Dialog msg$, "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to continue"
+                IF NOT abortGame THEN
+                    ShowWait
+                    Level SAMELEVEL
+                    DrawHud
+                    DelayMs 400
+                END IF
             END IF
         ELSE
             'level completed
@@ -1007,6 +1082,7 @@ SUB PlayNibbles
             ELSE
                 Dialog "LEVEL COMPLETE!", "Bonus +500 points", "Press SPACE"
                 IF abortGame THEN EXIT DO
+                ShowWait
                 Level NEXTLEVEL
                 DrawHud
                 Dialog "L E V E L" + STR$(curLevel), "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to start"
@@ -1096,80 +1172,123 @@ END SUB
 'RedrawRows:
 '  Redraws text rows r1 to r2 of the playfield (and the items)
 SUB RedrawRows (r1, r2)
+    DEF SEG = vidSeg
     FOR r = r1 TO r2
+        pt = r * 2 - 1
+        pb = r * 2
+        ofs = (r - 1) * 160
         FOR c = 1 TO 80
-            DrawCell r, c
+            t = arena(pt, c)
+            b = arena(pb, c)
+            IF t = b THEN
+                ch = 219: attr = t + (t AND 7) * 16
+            ELSEIF b < 8 THEN
+                ch = 223: attr = t + b * 16
+            ELSEIF t < 8 THEN
+                ch = 220: attr = b + t * 16
+            ELSE
+                ch = 223: attr = t + b * 16
+            END IF
+            POKE ofs, ch
+            POKE ofs + 1, attr
+            ofs = ofs + 2
         NEXT c
     NEXT r
+    DEF SEG
     DrawItems
+END SUB
+
+'RestoreEggGlyph:
+'  Puts the original shape of character EGGGLYPH back (at the end)
+SUB RestoreEggGlyph
+    IF eggChr <> EGGGLYPH THEN EXIT SUB
+    ofs = EGGGLYPH * 32
+    FontOpen
+    DEF SEG = &HA000&
+    FOR i = 0 TO 15
+        POKE ofs + i, ASC(MID$(origGlyph$, i + 1, 1))
+    NEXT i
+    DEF SEG
+    FontClose
 END SUB
 
 'RunBfs:
 '  Path search from the heads of the living snakes over the empty pixels.
-'  bfsDist() = steps from the nearest head, -1 = not reachable,
-'  -2 = blocked by a mine.  With useDoors (divided levels only) a path may
-'  also leave through a side door and come out on the other side.
+'  bfsD(i) for pixel (row, col), i = (row - 1) * 80 + col - 1:
+'  steps from the nearest head, -1 = not reachable, -2 = blocked
+'  (wall, snake, mine, status line).  With useDoors (divided levels only)
+'  a path may also leave through a side door and come out on the other side.
 SUB RunBfs (useDoors)
     doors = (useDoors AND splitLevel)
     FOR r = 1 TO 50
+        bs = (r - 1) * 80 - 1
         FOR c = 1 TO 80
-            bfsDist(r, c) = -1
+            IF arena(r, c) = pal(4) THEN bfsD(bs + c) = -1 ELSE bfsD(bs + c) = -2
         NEXT c
     NEXT r
+    FOR i = 0 TO 159                          'the two status line rows
+        bfsD(i) = -2
+    NEXT i
+    IF doors THEN
+        FOR r = 5 TO 48
+            bfsD((r - 1) * 80) = -1
+            bfsD((r - 1) * 80 + 79) = -1
+        NEXT r
+    END IF
     FOR m = 1 TO MAXMINE
         IF minTime(m) > 0 THEN
-            bfsDist(minRow(m) * 2 - 1, minCol(m)) = -2
-            bfsDist(minRow(m) * 2, minCol(m)) = -2
+            bfsD((minRow(m) * 2 - 2) * 80 + minCol(m) - 1) = -2
+            bfsD((minRow(m) * 2 - 1) * 80 + minCol(m) - 1) = -2
         END IF
     NEXT m
     FOR m = 1 TO fxCount
-        bfsDist(fxRow(m) * 2 - 1, fxCol(m)) = -2
-        bfsDist(fxRow(m) * 2, fxCol(m)) = -2
+        bfsD((fxRow(m) * 2 - 2) * 80 + fxCol(m) - 1) = -2
+        bfsD((fxRow(m) * 2 - 1) * 80 + fxCol(m) - 1) = -2
     NEXT m
 
     qh = 0
     qt = 0
     FOR a = 1 TO numPlayers
         IF sammy(a).alive THEN
-            bfsDist(sammy(a).row, sammy(a).col) = 0
-            bfsQ(qt) = (sammy(a).row - 1) * 80 + sammy(a).col - 1
+            i = (sammy(a).row - 1) * 80 + sammy(a).col - 1
+            bfsD(i) = 0
+            bfsQ(qt) = i
             qt = qt + 1
         END IF
     NEXT a
 
     DO WHILE qh < qt
-        cur = bfsQ(qh)
+        i = bfsQ(qh)
         qh = qh + 1
-        r = cur \ 80 + 1
-        c = cur MOD 80 + 1
-        d = bfsDist(r, c) + 1
-        FOR k = 1 TO 4
-            nr = r
-            nc = c
-            SELECT CASE k
-                CASE 1: nr = r - 1
-                CASE 2: nr = r + 1
-                CASE 3: nc = c - 1
-                CASE ELSE: nc = c + 1
-            END SELECT
-            vdoor = FALSE
-            IF doors THEN
-                IF r >= 5 AND r <= 48 THEN
-                    IF nc < 1 THEN nc = 80
-                    IF nc > 80 THEN nc = 1
-                    IF nc = 1 OR nc = 80 THEN vdoor = TRUE
-                END IF
+        d = bfsD(i) + 1
+        c = i MOD 80
+        rw = i \ 80                           'row - 1
+        IF c < 79 THEN
+            j = i + 1
+            IF bfsD(j) = -1 THEN bfsD(j) = d: bfsQ(qt) = j: qt = qt + 1
+        ELSEIF doors THEN
+            IF rw >= 4 AND rw <= 47 THEN
+                j = i - 79
+                IF bfsD(j) = -1 THEN bfsD(j) = d: bfsQ(qt) = j: qt = qt + 1
             END IF
-            IF nr >= 3 AND nr <= 50 AND nc >= 1 AND nc <= 80 THEN
-                IF bfsDist(nr, nc) = -1 THEN
-                    IF arena(nr, nc) = pal(4) OR (vdoor AND nr >= 5 AND nr <= 48) THEN
-                        bfsDist(nr, nc) = d
-                        bfsQ(qt) = (nr - 1) * 80 + nc - 1
-                        qt = qt + 1
-                    END IF
-                END IF
+        END IF
+        IF c > 0 THEN
+            j = i - 1
+            IF bfsD(j) = -1 THEN bfsD(j) = d: bfsQ(qt) = j: qt = qt + 1
+        ELSEIF doors THEN
+            IF rw >= 4 AND rw <= 47 THEN
+                j = i + 79
+                IF bfsD(j) = -1 THEN bfsD(j) = d: bfsQ(qt) = j: qt = qt + 1
             END IF
-        NEXT k
+        END IF
+        IF i < 3920 THEN
+            j = i + 80
+            IF bfsD(j) = -1 THEN bfsD(j) = d: bfsQ(qt) = j: qt = qt + 1
+        END IF
+        IF i >= 80 THEN
+            j = i - 80
+            IF bfsD(j) = -1 THEN bfsD(j) = d: bfsQ(qt) = j: qt = qt + 1
+        END IF
     LOOP
 END SUB
 
@@ -1243,8 +1362,8 @@ SUB SpawnHeart
     bestC = 0
     FOR rr = 2 TO 25
         FOR cc = 2 TO 79
-            d1 = bfsDist(rr * 2 - 1, cc)
-            d2 = bfsDist(rr * 2, cc)
+            d1 = bfsD((rr * 2 - 2) * 80 + cc - 1)
+            d2 = bfsD((rr * 2 - 1) * 80 + cc - 1)
             IF d1 >= 0 AND d2 >= 0 THEN
                 dd = d1
                 IF d2 < dd THEN dd = d2
@@ -1484,21 +1603,15 @@ FUNCTION TryChooseDoor
         r = INT(RND * 19) + 3
         ok = TRUE
         FOR pr = r * 2 - 1 TO (r + 3) * 2
-            FOR px = 2 TO 4
-                IF arena(pr, px) <> pal(4) THEN ok = FALSE
-            NEXT px
-            FOR px = 77 TO 79
-                IF arena(pr, px) <> pal(4) THEN ok = FALSE
-            NEXT px
+            IF arena(pr, 2) <> pal(4) OR arena(pr, 3) <> pal(4) OR arena(pr, 4) <> pal(4) THEN ok = FALSE: EXIT FOR
+            IF arena(pr, 77) <> pal(4) OR arena(pr, 78) <> pal(4) OR arena(pr, 79) <> pal(4) THEN ok = FALSE: EXIT FOR
         NEXT pr
-        FOR k = 0 TO 3
-            FOR cc = 2 TO 7
-                IF CellBusy(r + k, cc) THEN ok = FALSE
-            NEXT cc
-            FOR cc = 74 TO 79
-                IF CellBusy(r + k, cc) THEN ok = FALSE
-            NEXT cc
-        NEXT k
+        IF ok THEN
+            IF ItemInRect(r, 2, r + 3, 7) THEN ok = FALSE
+        END IF
+        IF ok THEN
+            IF ItemInRect(r, 74, r + 3, 79) THEN ok = FALSE
+        END IF
         IF ok THEN
             doorRow = r
             TryChooseDoor = TRUE

@@ -5,8 +5,8 @@
 '  level layouts.  The main module is NIBBLESD.BAS.
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 11
-'  2026-10-17
+'  Version 12
+'  2026-10-18
 '
 '  Build: both modules are compiled with BC and linked together.
 '  For detailed information, please refer to the README.md file.
@@ -14,6 +14,7 @@
 
 '$DYNAMIC
 DEFINT A-Z
+
 
 '---- User defined types ----------------------------------------------------
 TYPE snakeBody
@@ -35,44 +36,45 @@ TYPE snakeType
 END TYPE
 
 '---- Sub declarations --------------------------------------------------------
-DECLARE SUB ApplyTheme ()
 DECLARE FUNCTION AskYesNo (msg$)
 DECLARE FUNCTION BannerRow$ (i)
 DECLARE FUNCTION BodyColor (a, idx)
+DECLARE FUNCTION CleanName$ (n$, dflt$)
+DECLARE FUNCTION EggsReachable ()
+DECLARE FUNCTION WallColor (row, col)
+DECLARE FUNCTION GameOverScreen ()
+DECLARE FUNCTION IsWallColor (c)
+DECLARE FUNCTION MainMenu ()
+DECLARE FUNCTION Num7$ (v&)
+DECLARE SUB ApplyTheme ()
 DECLARE SUB Center (row, text$, attr)
 DECLARE SUB ChangeSetting (sel, d)
-DECLARE FUNCTION CleanName$ (n$, dflt$)
 DECLARE SUB ClearScreen (attr)
 DECLARE SUB DelayMs (ms)
 DECLARE SUB Dialog (t1$, t2$, hint$)
 DECLARE SUB DrawBanner (row, phase, withShadow)
 DECLARE SUB DrawBox (r1, c1, r2, c2, attr)
+DECLARE SUB DrawTable (r0, hl1, hl2, baseAttr, hlAttr)
 DECLARE SUB DrawMenu (sel)
 DECLARE SUB DrawMenuFrame ()
-DECLARE SUB DrawMenuHint ()
 DECLARE SUB DrawMenuRow (i, sel)
-DECLARE SUB DrawTable (r0, hl1, hl2, baseAttr, hlAttr)
+DECLARE SUB DrawMenuHint ()
 DECLARE SUB EditName (who)
-DECLARE FUNCTION EggsReachable ()
 DECLARE SUB FillRect (r1, c1, r2, c2, ch, attr)
-DECLARE SUB FixEggs ()
-DECLARE FUNCTION GameOverScreen ()
 DECLARE SUB Intro ()
-DECLARE FUNCTION IsWallColor (c)
 DECLARE SUB Level (what)
-DECLARE FUNCTION MainMenu ()
-DECLARE FUNCTION Num7$ (v&)
 DECLARE SUB PlaceEggs ()
 DECLARE SUB PlaceFixedMines ()
 DECLARE SUB PutChar (row, col, ch, attr)
 DECLARE SUB PutStr (row, col, s$, attr)
 DECLARE SUB RedrawRows (r1, r2)
 DECLARE SUB RunBfs (useDoors)
+DECLARE SUB FixEggs ()
 DECLARE SUB SetBlink (flag)
 DECLARE SUB ShowScores ()
+DECLARE SUB ShowWait ()
 DECLARE SUB SparklePause ()
 DECLARE SUB Wall (row, col)
-DECLARE FUNCTION WallColor (row, col)
 
 '---- Constants ---------------------------------------------------------------
 CONST TRUE = -1
@@ -83,8 +85,8 @@ CONST NUMLEVELS = 25
 CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
-CONST EGGCHAR = 9         'character used for an egg
-CONST VERSIONTXT = "VERSION 11"   'shown on the title screen
+CONST EGGGLYPH = 1        'character code redefined as a filled egg
+CONST VERSIONTXT = "VERSION 12"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -1143,6 +1145,15 @@ SUB ShowScores
     DO WHILE INKEY$ <> "": LOOP
     DO
     LOOP WHILE INKEY$ = ""
+END SUB
+
+'ShowWait:
+'  Message while a level is built (it takes a moment)
+SUB ShowWait
+    attr = pal(5) + pal(6) * 16
+    DrawBox 10, 22, 14, 59, attr
+    Center 11, "PLEASE WAIT", attr
+    Center 12, "preparing the arena...", attr
 END SUB
 
 'SparklePause:

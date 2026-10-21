@@ -28,7 +28,10 @@ consists of two modules for QuickBASIC 4.5, always called `NIBBLESD.BAS` (the ma
 - Five colour themes: Classic, Night, Forest, Ocean, Desert
 - Stone walls (grey check pattern) or plain coloured walls
 - Animated title screen with a big logo
-- Eggs to collect on every level (8 + level number, at most 25)
+- Eggs to collect on every level (8 + level number, at most 25), drawn as filled egg shapes
+  (a redefined character; a hollow circle is used if the video card does not accept it, which
+  is always the case in QB64-PE, see **Known differences in QB64-PE**)
+- A "Please wait" message is shown while a level is built, which is now much faster
 - A heart appears when only one egg is left: catch it for an extra life
 - Bright snake heads; the snakes are visible before a round starts
 - Two-tone striped snake bodies
@@ -255,15 +258,37 @@ an earlier version (a single score) can still be read.
 | `NIBBLEUI.BAS` | QuickBASIC 4.5, second module: screens, menus, drawing helpers and the 25 level layouts |
 | `NIBBLESD_ALL.BAS` | QB64-PE: the code of both modules merged into one file |
 
-**Why two modules for QuickBASIC 4.5?** As a single file the game became too big for the
-QuickBASIC 4.5 compiler (BC stops with "Out of memory"). So the source is split into two
-modules that are compiled separately and then linked. Both modules declare the variables they
-share with identical `COMMON SHARED` blocks, and both are needed to run or build the game.
+**Why two modules for QuickBASIC 4.5?** The only reason is memory. Compiled as a single file,
+the game is too big for the QuickBASIC 4.5 compiler: `BC.EXE` stops with the error
+"Out of memory" (and the linker then reports `L1101`, which is only a follow-up error). This
+happens even with plenty of free DOS memory, because the compiler's own internal tables overflow,
+not the memory of the machine (QuickBASIC 7.1 compiles the single file without problems). So the
+source is split into two modules that are compiled separately and then linked. Both modules
+declare the variables they share with identical `COMMON SHARED` blocks, and both are needed to
+run or build the game.
 
 **Why one merged file for QB64-PE?** QB64-PE builds a program from a single source file; it has
-no way to link separate modules. `NIBBLESD_ALL.BAS` is the same code as the two modules, put
-into one file (the `COMMON SHARED` lines became `DIM SHARED`). It runs and compiles by itself, so
-`NIBBLESD.BAS` alone does not work in QB64-PE. If you change the game, change both versions.
+no way to link separate modules, and it has no memory problem with the big file.
+`NIBBLESD_ALL.BAS` is the same code as the two modules, put into one file (the `COMMON SHARED`
+lines became `DIM SHARED`). QB64-PE always compiles the program, so the file is compiled to an
+EXE file (see **Building the EXE**) or built and started from the editor. `NIBBLESD.BAS` alone
+does not work in QB64-PE. If you change the game, change both versions.
+
+**Running without compiling in QB45:** the memory problem only occurs in the `BC` compiler. In
+the QuickBASIC 4.5 environment the merged file `NIBBLESD_ALL.BAS` can be loaded and run directly
+(**F5**), without being compiled, so you can also try the game with this single file.
+
+**Compiled or run in the IDE?** A compiled program (`NIBBLESD.EXE`) runs faster than the same
+code run from inside the QuickBASIC IDE, because the IDE interprets the code. For normal play,
+use the compiled EXE file; running from the IDE is meant for trying and editing the source.
+
+### Known differences in QB64-PE
+
+The game redefines one character of the VGA font (the filled egg shape). QuickBASIC 4.5 does this
+by writing to the video card's character generator memory. QB64-PE does not support this: the
+change does not take place and the standard character is displayed instead of the redefined one.
+The game detects this and draws the eggs as a hollow circle. This is only a cosmetic difference;
+everything else works the same.
 
 ## Building the EXE
 
@@ -337,6 +362,17 @@ Instead of the command line you can also open `NIBBLESD_ALL.BAS` in the QB64-PE 
 ## History
 
 Newest version first.
+
+### Version 12 - 2026-10-18
+
+- Eggs are now drawn as a filled egg shape: the game redefines one character of the VGA font
+  (read back and checked; if the card does not accept it, the old hollow circle is used) and puts
+  the original shape back when the game ends
+- Building a level is much faster: the path search (eggs, fixed mines, heart) uses a flat array,
+  redrawing the playfield and choosing a door row are quicker, and fewer attempts are made to
+  place fixed mines
+- A "PLEASE WAIT - preparing the arena..." message is shown while a level is built; after a
+  crash there is a short pause before the level starts again
 
 ### Version 11 - 2026-10-17
 
