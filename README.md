@@ -28,10 +28,11 @@ consists of two modules for QuickBASIC 4.5, always called `NIBBLESD.BAS` (the ma
 - Five colour themes: Classic, Night, Forest, Ocean, Desert
 - Stone walls (grey check pattern) or plain coloured walls
 - Animated title screen with a big logo
-- Eggs to collect on every level (8 + level number, at most 25), drawn as filled egg shapes
-  (a redefined character; a hollow circle is used if the video card does not accept it, which
-  is always the case in QB64-PE, see **Known differences in QB64-PE**)
-- A "Please wait" message is shown while a level is built, which is now much faster
+- Eggs to collect on every level (8 + level number, at most 25)
+- Eggs, hearts, bonus diamonds and mines are drawn as filled shapes (redefined characters; the
+  normal characters are used if the video card does not accept the new shapes, which is always
+  the case in QB64-PE, see **Known differences in QB64-PE**)
+- The next level is built while the message box is on the screen, so you hardly ever wait
 - A heart appears when only one egg is left: catch it for an extra life
 - Bright snake heads; the snakes are visible before a round starts
 - Two-tone striped snake bodies
@@ -130,7 +131,8 @@ a folder that is write-protected.
 
 Menus: UP / DOWN select a line, LEFT / RIGHT (or SPACE) change a setting, ENTER starts the
 game (on the two name lines ENTER lets you type a name, on the **High scores** line it shows the
-table), ESC quits. On the game over screen ENTER plays again, M returns to the menu and ESC quits.
+table), ESC quits. The game over screen has three buttons, **PLAY AGAIN**, **MENU** and **QUIT**:
+select with the arrow keys or TAB and press ENTER, or press P, M or Q (ESC quits).
 
 ## How to play
 
@@ -284,11 +286,11 @@ use the compiled EXE file; running from the IDE is meant for trying and editing 
 
 ### Known differences in QB64-PE
 
-The game redefines one character of the VGA font (the filled egg shape). QuickBASIC 4.5 does this
-by writing to the video card's character generator memory. QB64-PE does not support this: the
-change does not take place and the standard character is displayed instead of the redefined one.
-The game detects this and draws the eggs as a hollow circle. This is only a cosmetic difference;
-everything else works the same.
+The game redefines four characters of the VGA font (the filled shapes of the egg, the heart, the
+bonus diamond and the mine). QuickBASIC 4.5 does this by writing to the video card's character
+generator memory. QB64-PE does not support this: the change does not take place and the standard
+characters are displayed instead of the redefined ones. The game detects this and uses the normal
+characters. This is only a cosmetic difference; everything else works the same.
 
 ## Building the EXE
 
@@ -362,6 +364,17 @@ Instead of the command line you can also open `NIBBLESD_ALL.BAS` in the QB64-PE 
 ## History
 
 Newest version first.
+
+### Version 13 - 2026-10-19
+
+- Hearts, bonus diamonds and mines get filled shapes like the eggs (all four are redefined
+  characters, read back and checked; if the card refuses them the old shapes are restored and the
+  normal characters are used); the original shapes are put back when the game ends
+- A new level is built while the "level complete" or "crashed" message box is shown. The arena is
+  drawn when the box is closed; "PLEASE WAIT" only appears if you press SPACE or ENTER before the
+  level is ready, and an ESC pressed meanwhile is kept for the box
+- The game over screen has three buttons (PLAY AGAIN, MENU, QUIT): arrow keys or TAB and ENTER,
+  or P, M, Q
 
 ### Version 12 - 2026-10-18
 

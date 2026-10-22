@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 12
-'  2026-10-18
+'  Version 13
+'  2026-10-19
 '
 '  Written for QuickBASIC 4.5 (QB45), in two modules (NIBBLESD.BAS + NIBBLEUI.BAS).
 '  QB64-PE builds NIBBLESD_ALL.BAS, the same code merged into one file.
@@ -49,6 +49,7 @@ DECLARE FUNCTION MineSpotOk (r, c)
 DECLARE FUNCTION TryChooseDoor ()
 DECLARE FUNCTION WallColor (row, col)
 DECLARE FUNCTION GameOverScreen ()
+DECLARE FUNCTION GlyphData$ (k)
 DECLARE FUNCTION IsWallColor (c)
 DECLARE FUNCTION ItemInRect (r1, c1, r2, c2)
 DECLARE FUNCTION MainMenu ()
@@ -79,7 +80,7 @@ DECLARE SUB FontOpen ()
 DECLARE SUB Intro ()
 DECLARE SUB Level (what)
 DECLARE SUB LoadConfig ()
-DECLARE SUB LoadEggGlyph ()
+DECLARE SUB LoadGlyphs ()
 DECLARE SUB LoadHigh ()
 DECLARE SUB PlaceEggs ()
 DECLARE SUB PlaceFixedMines ()
@@ -93,7 +94,8 @@ DECLARE SUB RedrawRows (r1, r2)
 DECLARE SUB RunBfs (useDoors)
 DECLARE SUB FixEggs ()
 DECLARE FUNCTION DoorWaitMs ()
-DECLARE SUB RestoreEggGlyph ()
+DECLARE SUB PollWait ()
+DECLARE SUB RestoreGlyphs ()
 DECLARE SUB SaveConfig ()
 DECLARE SUB SaveHigh ()
 DECLARE SUB SetBlink (flag)
@@ -114,7 +116,7 @@ CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGGLYPH = 1        'character code redefined as a filled egg
-CONST VERSIONTXT = "VERSION 12"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 13"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -129,6 +131,7 @@ COMMON SHARED vidSeg AS LONG, highScore AS LONG, curLevel, numPlayers
 COMMON SHARED speedSet, speedUp, startLevel, theme, soundOn, mineMode
 COMMON SHARED doorsOn, wallStone, endMode, bonOn, fxCount, heartOn
 COMMON SHARED heartDone, doorState, abortGame, victory, splitLevel
+COMMON SHARED prepWhat, spaceHit, pendingEsc, deferDraw
 
 '---- Global variables of this module only ------------------------------------
 'The playfield is 80 x 50 "pixels": every text character holds two pixels
@@ -139,7 +142,8 @@ DIM SHARED hitMine(1 TO 2)
 DIM SHARED eggRow(1 TO MAXEGG), eggCol(1 TO MAXEGG)
 DIM SHARED fxRow(1 TO MAXFIX), fxCol(1 TO MAXFIX)     'fixed mines
 DIM SHARED bfsD(0 TO 3999), bfsQ(0 TO 3999)        'path search (one entry per pixel)
-DIM SHARED eggChr, origGlyph$
+DIM SHARED eggChr, glyphsOn
+DIM SHARED gCode(1 TO 4), gNew$(1 TO 4), gOld$(1 TO 4)
 DIM SHARED loopsPerMs AS SINGLE
 DIM SHARED bonRow, bonCol, bonTime, eggLeft, eggTotal
 DIM SHARED heartRow, heartCol, heartTime, heartMax, tickCnt
@@ -196,8 +200,8 @@ ApplyTheme
 LoadHigh
 SetBlink FALSE                'allows 16 background colours
 LOCATE , , 0                  'hide the cursor
-eggChr = 9                    'hollow circle unless the egg glyph can be loaded
-LoadEggGlyph
+eggChr = 9                    'hollow circle unless the special shapes can be loaded
+LoadGlyphs
 
 ClearScreen 7
 Center 12, "Please wait...", 7
@@ -218,7 +222,7 @@ DO
     LOOP WHILE choice = 1
 LOOP UNTIL quitAll
 
-RestoreEggGlyph
+RestoreGlyphs
 SetBlink TRUE
 COLOR 7, 0
 CLS
@@ -728,6 +732,27 @@ SUB FontOpen
     OUT &H3CE, 6: OUT &H3CF, 4
 END SUB
 
+'GlyphData$:
+'  Shape (16 lines of 8 pixels) of special character number k:
+'  1 egg (character 1), 2 heart (3), 3 diamond (4), 4 mine (15)
+FUNCTION GlyphData$ (k)
+    SELECT CASE k
+        CASE 1
+            g$ = CHR$(0) + CHR$(0) + CHR$(24) + CHR$(60) + CHR$(60) + CHR$(126) + CHR$(126) + CHR$(255)
+            g$ = g$ + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(126) + CHR$(126) + CHR$(60) + CHR$(24) + CHR$(0)
+        CASE 2
+            g$ = CHR$(0) + CHR$(0) + CHR$(102) + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(126)
+            g$ = g$ + CHR$(126) + CHR$(60) + CHR$(60) + CHR$(24) + CHR$(0) + CHR$(0) + CHR$(0) + CHR$(0)
+        CASE 3
+            g$ = CHR$(0) + CHR$(24) + CHR$(24) + CHR$(60) + CHR$(60) + CHR$(126) + CHR$(126) + CHR$(255)
+            g$ = g$ + CHR$(255) + CHR$(126) + CHR$(126) + CHR$(60) + CHR$(60) + CHR$(24) + CHR$(24) + CHR$(0)
+        CASE ELSE
+            g$ = CHR$(0) + CHR$(24) + CHR$(24) + CHR$(153) + CHR$(126) + CHR$(126) + CHR$(255) + CHR$(255)
+            g$ = g$ + CHR$(255) + CHR$(255) + CHR$(126) + CHR$(126) + CHR$(153) + CHR$(24) + CHR$(24) + CHR$(0)
+    END SELECT
+    GlyphData$ = g$
+END FUNCTION
+
 'ItemInRect:
 '  TRUE if an egg, bonus, heart or mine sits inside the text cell rectangle
 FUNCTION ItemInRect (r1, c1, r2, c2)
@@ -798,33 +823,47 @@ SUB LoadConfig
     fileBusy = FALSE
 END SUB
 
-'LoadEggGlyph:
-'  Redefines character EGGGLYPH as a filled egg (8 x 16 pixels).  The
-'  result is read back; if the video card does not accept the new shape the
-'  hollow circle (character 9) stays in use.
-SUB LoadEggGlyph
+'LoadGlyphs:
+'  Redefines the characters of the egg, heart, diamond and mine as filled
+'  shapes (8 x 16 pixels).  Everything is read back; if the video card does
+'  not accept the new shapes the old ones are put back and the normal
+'  characters (hollow circle for the egg) stay in use.
+SUB LoadGlyphs
     IF vidSeg <> &HB800& THEN EXIT SUB
-    g$ = CHR$(0) + CHR$(0) + CHR$(24) + CHR$(60) + CHR$(60) + CHR$(126) + CHR$(126) + CHR$(255)
-    g$ = g$ + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(126) + CHR$(126) + CHR$(60) + CHR$(24) + CHR$(0)
-    ofs = EGGGLYPH * 32
-    old$ = ""
+    gCode(1) = EGGGLYPH: gCode(2) = 3: gCode(3) = 4: gCode(4) = 15
+    FOR k = 1 TO 4
+        gNew$(k) = GlyphData$(k)
+    NEXT k
     ok = TRUE
     FontOpen
     DEF SEG = &HA000&
-    FOR i = 0 TO 15
-        old$ = old$ + CHR$(PEEK(ofs + i))
-    NEXT i
-    FOR i = 0 TO 15
-        POKE ofs + i, ASC(MID$(g$, i + 1, 1))
-    NEXT i
-    FOR i = 0 TO 15
-        IF PEEK(ofs + i) <> ASC(MID$(g$, i + 1, 1)) THEN ok = FALSE
-    NEXT i
+    FOR k = 1 TO 4
+        ofs = gCode(k) * 32
+        old$ = ""
+        FOR i = 0 TO 15
+            old$ = old$ + CHR$(PEEK(ofs + i))
+        NEXT i
+        gOld$(k) = old$
+        FOR i = 0 TO 15
+            POKE ofs + i, ASC(MID$(gNew$(k), i + 1, 1))
+        NEXT i
+        FOR i = 0 TO 15
+            IF PEEK(ofs + i) <> ASC(MID$(gNew$(k), i + 1, 1)) THEN ok = FALSE
+        NEXT i
+    NEXT k
+    IF NOT ok THEN
+        FOR k = 1 TO 4
+            ofs = gCode(k) * 32
+            FOR i = 0 TO 15
+                POKE ofs + i, ASC(MID$(gOld$(k), i + 1, 1))
+            NEXT i
+        NEXT k
+    END IF
     DEF SEG
     FontClose
     IF ok THEN
         eggChr = EGGGLYPH
-        origGlyph$ = old$
+        glyphsOn = TRUE
     END IF
 END SUB
 
@@ -912,6 +951,7 @@ SUB PlaceEggs
         eggCol(e) = 0
     NEXT e
     FOR e = 1 TO eggTotal
+        IF deferDraw THEN PollWait
         FOR attempt = 1 TO 40
             FindCell r, c
             okFar = TRUE
@@ -942,6 +982,7 @@ SUB PlaceFixedMines
     IF numPlayers = 2 THEN want = ((want + 1) \ 2) * 2
 
     FOR attempt = 1 TO 3
+        IF deferDraw THEN PollWait
         fxCount = 0
         tries = 0
         DO WHILE fxCount < want AND tries < 200
@@ -1055,12 +1096,11 @@ SUB PlayNibbles
             IF gameOver THEN
                 Dialog msg$, "No lives left!", "Press SPACE"
             ELSE
+                prepWhat = SAMELEVEL                  'the arena is built behind the message
                 Dialog msg$, "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to continue"
                 IF NOT abortGame THEN
-                    ShowWait
-                    Level SAMELEVEL
                     DrawHud
-                    DelayMs 400
+                    DelayMs 300
                 END IF
             END IF
         ELSE
@@ -1080,10 +1120,9 @@ SUB PlayNibbles
                 gameOver = TRUE
                 Dialog "ALL" + STR$(NUMLEVELS) + " LEVELS COMPLETE!", "Life bonus: 1000 per life", "Press SPACE"
             ELSE
+                prepWhat = NEXTLEVEL                  'the next level is built behind the message
                 Dialog "LEVEL COMPLETE!", "Bonus +500 points", "Press SPACE"
                 IF abortGame THEN EXIT DO
-                ShowWait
-                Level NEXTLEVEL
                 DrawHud
                 Dialog "L E V E L" + STR$(curLevel), "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to start"
             END IF
@@ -1111,6 +1150,24 @@ FUNCTION PointIsThere (row, col)
         PointIsThere = (arena(row, col) <> pal(4))
     END IF
 END FUNCTION
+
+'PollWait:
+'  Called while a level is built behind a message box: looks at the keys.
+'  SPACE / ENTER shows "please wait"; ESC is kept for the message box.
+SUB PollWait
+    DO
+        k$ = INKEY$
+        IF k$ = "" THEN EXIT DO
+        IF k$ = " " OR k$ = CHR$(13) THEN
+            IF NOT spaceHit THEN
+                spaceHit = TRUE
+                ShowWait
+            END IF
+        ELSEIF k$ = CHR$(27) THEN
+            pendingEsc = TRUE
+        END IF
+    LOOP
+END SUB
 
 'PutPixel:
 '  Sets a pixel of the 80 x 50 playfield and redraws its text character
@@ -1198,16 +1255,18 @@ SUB RedrawRows (r1, r2)
     DrawItems
 END SUB
 
-'RestoreEggGlyph:
-'  Puts the original shape of character EGGGLYPH back (at the end)
-SUB RestoreEggGlyph
-    IF eggChr <> EGGGLYPH THEN EXIT SUB
-    ofs = EGGGLYPH * 32
+'RestoreGlyphs:
+'  Puts the original shapes back (at the end of the program)
+SUB RestoreGlyphs
+    IF NOT glyphsOn THEN EXIT SUB
     FontOpen
     DEF SEG = &HA000&
-    FOR i = 0 TO 15
-        POKE ofs + i, ASC(MID$(origGlyph$, i + 1, 1))
-    NEXT i
+    FOR k = 1 TO 4
+        ofs = gCode(k) * 32
+        FOR i = 0 TO 15
+            POKE ofs + i, ASC(MID$(gOld$(k), i + 1, 1))
+        NEXT i
+    NEXT k
     DEF SEG
     FontClose
 END SUB

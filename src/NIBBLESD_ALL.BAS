@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 12
-'  2026-10-18
+'  Version 13
+'  2026-10-19
 '
 '  Single file edition for QB64-PE: the same code as NIBBLESD.BAS and
 '  NIBBLEUI.BAS (the two QB45 modules), merged into one file.
@@ -50,6 +50,7 @@ DECLARE FUNCTION MineSpotOk (r, c)
 DECLARE FUNCTION TryChooseDoor ()
 DECLARE FUNCTION WallColor (row, col)
 DECLARE FUNCTION GameOverScreen ()
+DECLARE FUNCTION GlyphData$ (k)
 DECLARE FUNCTION IsWallColor (c)
 DECLARE FUNCTION ItemInRect (r1, c1, r2, c2)
 DECLARE FUNCTION MainMenu ()
@@ -89,7 +90,7 @@ DECLARE SUB FontOpen ()
 DECLARE SUB Intro ()
 DECLARE SUB Level (what)
 DECLARE SUB LoadConfig ()
-DECLARE SUB LoadEggGlyph ()
+DECLARE SUB LoadGlyphs ()
 DECLARE SUB LoadHigh ()
 DECLARE SUB PlaceEggs ()
 DECLARE SUB PlaceFixedMines ()
@@ -103,7 +104,8 @@ DECLARE SUB RedrawRows (r1, r2)
 DECLARE SUB RunBfs (useDoors)
 DECLARE SUB FixEggs ()
 DECLARE FUNCTION DoorWaitMs ()
-DECLARE SUB RestoreEggGlyph ()
+DECLARE SUB PollWait ()
+DECLARE SUB RestoreGlyphs ()
 DECLARE SUB SaveConfig ()
 DECLARE SUB SaveHigh ()
 DECLARE SUB SetBlink (flag)
@@ -127,7 +129,7 @@ CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGGLYPH = 1        'character code redefined as a filled egg
-CONST VERSIONTXT = "VERSION 12"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 13"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -139,6 +141,7 @@ DIM SHARED hiName$, hsCount, vidSeg AS LONG, highScore AS LONG, curLevel, numPla
 DIM SHARED speedSet, speedUp, startLevel, theme, soundOn, mineMode
 DIM SHARED doorsOn, wallStone, endMode, bonOn, fxCount, heartOn
 DIM SHARED heartDone, doorState, abortGame, victory, splitLevel
+DIM SHARED prepWhat, spaceHit, pendingEsc, deferDraw
 
 'The playfield is 80 x 50 "pixels": every text character holds two pixels
 '(upper and lower half block).  arena() stores the colour of each pixel.
@@ -148,7 +151,8 @@ DIM SHARED hitMine(1 TO 2)
 DIM SHARED eggRow(1 TO MAXEGG), eggCol(1 TO MAXEGG)
 DIM SHARED fxRow(1 TO MAXFIX), fxCol(1 TO MAXFIX)     'fixed mines
 DIM SHARED bfsD(0 TO 3999), bfsQ(0 TO 3999)        'path search (one entry per pixel)
-DIM SHARED eggChr, origGlyph$
+DIM SHARED eggChr, glyphsOn
+DIM SHARED gCode(1 TO 4), gNew$(1 TO 4), gOld$(1 TO 4)
 DIM SHARED loopsPerMs AS SINGLE
 DIM SHARED bonRow, bonCol, bonTime, eggLeft, eggTotal
 DIM SHARED heartRow, heartCol, heartTime, heartMax, tickCnt
@@ -205,8 +209,8 @@ ApplyTheme
 LoadHigh
 SetBlink FALSE                'allows 16 background colours
 LOCATE , , 0                  'hide the cursor
-eggChr = 9                    'hollow circle unless the egg glyph can be loaded
-LoadEggGlyph
+eggChr = 9                    'hollow circle unless the special shapes can be loaded
+LoadGlyphs
 
 ClearScreen 7
 Center 12, "Please wait...", 7
@@ -227,7 +231,7 @@ DO
     LOOP WHILE choice = 1
 LOOP UNTIL quitAll
 
-RestoreEggGlyph
+RestoreGlyphs
 SetBlink TRUE
 COLOR 7, 0
 CLS
@@ -737,6 +741,27 @@ SUB FontOpen
     OUT &H3CE, 6: OUT &H3CF, 4
 END SUB
 
+'GlyphData$:
+'  Shape (16 lines of 8 pixels) of special character number k:
+'  1 egg (character 1), 2 heart (3), 3 diamond (4), 4 mine (15)
+FUNCTION GlyphData$ (k)
+    SELECT CASE k
+        CASE 1
+            g$ = CHR$(0) + CHR$(0) + CHR$(24) + CHR$(60) + CHR$(60) + CHR$(126) + CHR$(126) + CHR$(255)
+            g$ = g$ + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(126) + CHR$(126) + CHR$(60) + CHR$(24) + CHR$(0)
+        CASE 2
+            g$ = CHR$(0) + CHR$(0) + CHR$(102) + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(126)
+            g$ = g$ + CHR$(126) + CHR$(60) + CHR$(60) + CHR$(24) + CHR$(0) + CHR$(0) + CHR$(0) + CHR$(0)
+        CASE 3
+            g$ = CHR$(0) + CHR$(24) + CHR$(24) + CHR$(60) + CHR$(60) + CHR$(126) + CHR$(126) + CHR$(255)
+            g$ = g$ + CHR$(255) + CHR$(126) + CHR$(126) + CHR$(60) + CHR$(60) + CHR$(24) + CHR$(24) + CHR$(0)
+        CASE ELSE
+            g$ = CHR$(0) + CHR$(24) + CHR$(24) + CHR$(153) + CHR$(126) + CHR$(126) + CHR$(255) + CHR$(255)
+            g$ = g$ + CHR$(255) + CHR$(255) + CHR$(126) + CHR$(126) + CHR$(153) + CHR$(24) + CHR$(24) + CHR$(0)
+    END SELECT
+    GlyphData$ = g$
+END FUNCTION
+
 'ItemInRect:
 '  TRUE if an egg, bonus, heart or mine sits inside the text cell rectangle
 FUNCTION ItemInRect (r1, c1, r2, c2)
@@ -807,33 +832,47 @@ SUB LoadConfig
     fileBusy = FALSE
 END SUB
 
-'LoadEggGlyph:
-'  Redefines character EGGGLYPH as a filled egg (8 x 16 pixels).  The
-'  result is read back; if the video card does not accept the new shape the
-'  hollow circle (character 9) stays in use.
-SUB LoadEggGlyph
+'LoadGlyphs:
+'  Redefines the characters of the egg, heart, diamond and mine as filled
+'  shapes (8 x 16 pixels).  Everything is read back; if the video card does
+'  not accept the new shapes the old ones are put back and the normal
+'  characters (hollow circle for the egg) stay in use.
+SUB LoadGlyphs
     IF vidSeg <> &HB800& THEN EXIT SUB
-    g$ = CHR$(0) + CHR$(0) + CHR$(24) + CHR$(60) + CHR$(60) + CHR$(126) + CHR$(126) + CHR$(255)
-    g$ = g$ + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(126) + CHR$(126) + CHR$(60) + CHR$(24) + CHR$(0)
-    ofs = EGGGLYPH * 32
-    old$ = ""
+    gCode(1) = EGGGLYPH: gCode(2) = 3: gCode(3) = 4: gCode(4) = 15
+    FOR k = 1 TO 4
+        gNew$(k) = GlyphData$(k)
+    NEXT k
     ok = TRUE
     FontOpen
     DEF SEG = &HA000&
-    FOR i = 0 TO 15
-        old$ = old$ + CHR$(PEEK(ofs + i))
-    NEXT i
-    FOR i = 0 TO 15
-        POKE ofs + i, ASC(MID$(g$, i + 1, 1))
-    NEXT i
-    FOR i = 0 TO 15
-        IF PEEK(ofs + i) <> ASC(MID$(g$, i + 1, 1)) THEN ok = FALSE
-    NEXT i
+    FOR k = 1 TO 4
+        ofs = gCode(k) * 32
+        old$ = ""
+        FOR i = 0 TO 15
+            old$ = old$ + CHR$(PEEK(ofs + i))
+        NEXT i
+        gOld$(k) = old$
+        FOR i = 0 TO 15
+            POKE ofs + i, ASC(MID$(gNew$(k), i + 1, 1))
+        NEXT i
+        FOR i = 0 TO 15
+            IF PEEK(ofs + i) <> ASC(MID$(gNew$(k), i + 1, 1)) THEN ok = FALSE
+        NEXT i
+    NEXT k
+    IF NOT ok THEN
+        FOR k = 1 TO 4
+            ofs = gCode(k) * 32
+            FOR i = 0 TO 15
+                POKE ofs + i, ASC(MID$(gOld$(k), i + 1, 1))
+            NEXT i
+        NEXT k
+    END IF
     DEF SEG
     FontClose
     IF ok THEN
         eggChr = EGGGLYPH
-        origGlyph$ = old$
+        glyphsOn = TRUE
     END IF
 END SUB
 
@@ -921,6 +960,7 @@ SUB PlaceEggs
         eggCol(e) = 0
     NEXT e
     FOR e = 1 TO eggTotal
+        IF deferDraw THEN PollWait
         FOR attempt = 1 TO 40
             FindCell r, c
             okFar = TRUE
@@ -951,6 +991,7 @@ SUB PlaceFixedMines
     IF numPlayers = 2 THEN want = ((want + 1) \ 2) * 2
 
     FOR attempt = 1 TO 3
+        IF deferDraw THEN PollWait
         fxCount = 0
         tries = 0
         DO WHILE fxCount < want AND tries < 200
@@ -1064,12 +1105,11 @@ SUB PlayNibbles
             IF gameOver THEN
                 Dialog msg$, "No lives left!", "Press SPACE"
             ELSE
+                prepWhat = SAMELEVEL                  'the arena is built behind the message
                 Dialog msg$, "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to continue"
                 IF NOT abortGame THEN
-                    ShowWait
-                    Level SAMELEVEL
                     DrawHud
-                    DelayMs 400
+                    DelayMs 300
                 END IF
             END IF
         ELSE
@@ -1089,10 +1129,9 @@ SUB PlayNibbles
                 gameOver = TRUE
                 Dialog "ALL" + STR$(NUMLEVELS) + " LEVELS COMPLETE!", "Life bonus: 1000 per life", "Press SPACE"
             ELSE
+                prepWhat = NEXTLEVEL                  'the next level is built behind the message
                 Dialog "LEVEL COMPLETE!", "Bonus +500 points", "Press SPACE"
                 IF abortGame THEN EXIT DO
-                ShowWait
-                Level NEXTLEVEL
                 DrawHud
                 Dialog "L E V E L" + STR$(curLevel), "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to start"
             END IF
@@ -1120,6 +1159,24 @@ FUNCTION PointIsThere (row, col)
         PointIsThere = (arena(row, col) <> pal(4))
     END IF
 END FUNCTION
+
+'PollWait:
+'  Called while a level is built behind a message box: looks at the keys.
+'  SPACE / ENTER shows "please wait"; ESC is kept for the message box.
+SUB PollWait
+    DO
+        k$ = INKEY$
+        IF k$ = "" THEN EXIT DO
+        IF k$ = " " OR k$ = CHR$(13) THEN
+            IF NOT spaceHit THEN
+                spaceHit = TRUE
+                ShowWait
+            END IF
+        ELSEIF k$ = CHR$(27) THEN
+            pendingEsc = TRUE
+        END IF
+    LOOP
+END SUB
 
 'PutPixel:
 '  Sets a pixel of the 80 x 50 playfield and redraws its text character
@@ -1207,16 +1264,18 @@ SUB RedrawRows (r1, r2)
     DrawItems
 END SUB
 
-'RestoreEggGlyph:
-'  Puts the original shape of character EGGGLYPH back (at the end)
-SUB RestoreEggGlyph
-    IF eggChr <> EGGGLYPH THEN EXIT SUB
-    ofs = EGGGLYPH * 32
+'RestoreGlyphs:
+'  Puts the original shapes back (at the end of the program)
+SUB RestoreGlyphs
+    IF NOT glyphsOn THEN EXIT SUB
     FontOpen
     DEF SEG = &HA000&
-    FOR i = 0 TO 15
-        POKE ofs + i, ASC(MID$(origGlyph$, i + 1, 1))
-    NEXT i
+    FOR k = 1 TO 4
+        ofs = gCode(k) * 32
+        FOR i = 0 TO 15
+            POKE ofs + i, ASC(MID$(gOld$(k), i + 1, 1))
+        NEXT i
+    NEXT k
     DEF SEG
     FontClose
 END SUB
@@ -1782,7 +1841,10 @@ END SUB
 
 'Dialog:
 '  Message box in the upper part of the screen, waits for SPACE or ENTER.
-'  ESC asks "Quit to the menu?" (Yes sets abortGame, No shows the box again)
+'  ESC asks "Quit to the menu?" (Yes sets abortGame, No shows the box again).
+'  If prepWhat is set, that level (SAMELEVEL / NEXTLEVEL) is built while the
+'  box is on the screen; the arena is drawn when the box is closed.  If SPACE
+'  is pressed before the level is ready, "please wait" is shown.
 SUB Dialog (t1$, t2$, hint$)
     w = LEN(t1$)
     IF LEN(t2$) > w THEN w = LEN(t2$)
@@ -1793,15 +1855,35 @@ SUB Dialog (t1$, t2$, hint$)
     c2 = c1 + w - 1
     attr = pal(5) + pal(6) * 16
     DO WHILE INKEY$ <> "": LOOP
+    prep = prepWhat
+    prepWhat = 0
+    prepDone = FALSE
+    spaceHit = FALSE
+    pendingEsc = FALSE
     done = FALSE
     DO
         DrawBox 8, c1, 12, c2, attr
         Center 9, t1$, attr
         Center 10, t2$, attr
         Center 11, hint$, attr
-        DO
-            k$ = INKEY$
-        LOOP UNTIL k$ = " " OR k$ = CHR$(13) OR k$ = CHR$(27)
+        IF prep > 0 THEN
+            deferDraw = TRUE
+            Level prep
+            deferDraw = FALSE
+            prepDone = TRUE
+            prep = 0
+        END IF
+        IF pendingEsc THEN
+            k$ = CHR$(27)
+            pendingEsc = FALSE
+        ELSEIF spaceHit THEN
+            k$ = " "
+            spaceHit = FALSE
+        ELSE
+            DO
+                k$ = INKEY$
+            LOOP UNTIL k$ = " " OR k$ = CHR$(13) OR k$ = CHR$(27)
+        END IF
         IF k$ = CHR$(27) THEN
             IF AskYesNo("Quit to the menu?") THEN
                 abortGame = TRUE
@@ -1811,7 +1893,11 @@ SUB Dialog (t1$, t2$, hint$)
             done = TRUE
         END IF
     LOOP UNTIL done
-    RedrawRows 7, 13
+    IF prepDone THEN
+        RedrawRows 2, 25
+    ELSE
+        RedrawRows 7, 13
+    END IF
 END SUB
 
 'DrawBanner:
@@ -2067,24 +2153,41 @@ FUNCTION GameOverScreen
     END IF
 
     DrawTable 10, rankOf(1), rankOf(2), attr, 14 + pal(6) * 16
-    Center 22, "ENTER = play again", attr
-    Center 23, "M = menu      ESC = quit", attr
-
+    sel = 1                                   '1 play again, 2 menu, 3 quit
+    hl = 7 * 16
     DO WHILE INKEY$ <> "": LOOP
     DO
-        k$ = INKEY$
+        IF sel = 1 THEN a1 = hl ELSE a1 = attr
+        IF sel = 2 THEN a2 = hl ELSE a2 = attr
+        IF sel = 3 THEN a3 = hl ELSE a3 = attr
+        PutStr 22, 23, "  PLAY AGAIN  ", a1
+        PutStr 22, 40, "  MENU  ", a2
+        PutStr 22, 51, "  QUIT  ", a3
+        Center 23, "arrow keys + ENTER      or P  M  Q", attr
+        DO
+            k$ = INKEY$
+        LOOP WHILE k$ = ""
         SELECT CASE k$
-            CASE CHR$(13), "y", "Y"
-                GameOverScreen = 1
+            CASE CHR$(0) + "K", CHR$(0) + "H"
+                sel = sel - 1
+                IF sel < 1 THEN sel = 3
+            CASE CHR$(0) + "M", CHR$(0) + "P", CHR$(9)
+                sel = sel + 1
+                IF sel > 3 THEN sel = 1
+            CASE CHR$(13)
+                EXIT DO
+            CASE "p", "P", "y", "Y"
+                sel = 1
                 EXIT DO
             CASE "m", "M"
-                GameOverScreen = 2
+                sel = 2
                 EXIT DO
-            CASE CHR$(27), "n", "N"
-                GameOverScreen = 3
+            CASE CHR$(27), "q", "Q", "n", "N"
+                sel = 3
                 EXIT DO
         END SELECT
     LOOP
+    GameOverScreen = sel
 END FUNCTION
 
 'Intro:
@@ -2130,6 +2233,7 @@ SUB Level (what)
             arena(r, c) = pal(4)
         NEXT c
     NEXT r
+    IF deferDraw THEN PollWait
 
     'outer wall
     FOR c = 1 TO 80
@@ -2512,6 +2616,7 @@ SUB Level (what)
             sammy(1).col = 62: sammy(2).col = 18
             sammy(1).direction = 3: sammy(2).direction = 4
     END SELECT
+    IF deferDraw THEN PollWait
 
     'set up the snakes: body behind the head, head drawn in head colour
     FOR a = 1 TO 2
@@ -2544,6 +2649,7 @@ SUB Level (what)
         sammy(a).length = STARTLEN
     NEXT a
 
+    IF deferDraw THEN PollWait
     bonOn = FALSE: heartOn = FALSE: heartDone = FALSE
     FOR m = 1 TO MAXMINE
         minTime(m) = 0
@@ -2551,14 +2657,16 @@ SUB Level (what)
     doorState = 0
     IF what <> SAMELEVEL THEN fxCount = 0       'same level again: same fixed mines
     PlaceEggs
+    IF deferDraw THEN PollWait
     IF splitLevel THEN FixEggs
+    IF deferDraw THEN PollWait
     IF fxCount = 0 THEN
         PlaceFixedMines
     ELSE
         RunBfs TRUE
         IF NOT EggsReachable THEN PlaceFixedMines
     END IF
-    RedrawRows 2, 25
+    IF NOT deferDraw THEN RedrawRows 2, 25
 END SUB
 
 'MainMenu:

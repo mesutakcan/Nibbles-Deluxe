@@ -5,8 +5,8 @@
 '  level layouts.  The main module is NIBBLESD.BAS.
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 12
-'  2026-10-18
+'  Version 13
+'  2026-10-19
 '
 '  Build: both modules are compiled with BC and linked together.
 '  For detailed information, please refer to the README.md file.
@@ -70,6 +70,7 @@ DECLARE SUB PutStr (row, col, s$, attr)
 DECLARE SUB RedrawRows (r1, r2)
 DECLARE SUB RunBfs (useDoors)
 DECLARE SUB FixEggs ()
+DECLARE SUB PollWait ()
 DECLARE SUB SetBlink (flag)
 DECLARE SUB ShowScores ()
 DECLARE SUB ShowWait ()
@@ -86,7 +87,7 @@ CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGGLYPH = 1        'character code redefined as a filled egg
-CONST VERSIONTXT = "VERSION 12"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 13"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -101,6 +102,7 @@ COMMON SHARED vidSeg AS LONG, highScore AS LONG, curLevel, numPlayers
 COMMON SHARED speedSet, speedUp, startLevel, theme, soundOn, mineMode
 COMMON SHARED doorsOn, wallStone, endMode, bonOn, fxCount, heartOn
 COMMON SHARED heartDone, doorState, abortGame, victory, splitLevel
+COMMON SHARED prepWhat, spaceHit, pendingEsc, deferDraw
 
 'ApplyTheme:
 '  Fills the colour table.  Entries:
@@ -255,7 +257,10 @@ END SUB
 
 'Dialog:
 '  Message box in the upper part of the screen, waits for SPACE or ENTER.
-'  ESC asks "Quit to the menu?" (Yes sets abortGame, No shows the box again)
+'  ESC asks "Quit to the menu?" (Yes sets abortGame, No shows the box again).
+'  If prepWhat is set, that level (SAMELEVEL / NEXTLEVEL) is built while the
+'  box is on the screen; the arena is drawn when the box is closed.  If SPACE
+'  is pressed before the level is ready, "please wait" is shown.
 SUB Dialog (t1$, t2$, hint$)
     w = LEN(t1$)
     IF LEN(t2$) > w THEN w = LEN(t2$)
@@ -266,15 +271,35 @@ SUB Dialog (t1$, t2$, hint$)
     c2 = c1 + w - 1
     attr = pal(5) + pal(6) * 16
     DO WHILE INKEY$ <> "": LOOP
+    prep = prepWhat
+    prepWhat = 0
+    prepDone = FALSE
+    spaceHit = FALSE
+    pendingEsc = FALSE
     done = FALSE
     DO
         DrawBox 8, c1, 12, c2, attr
         Center 9, t1$, attr
         Center 10, t2$, attr
         Center 11, hint$, attr
-        DO
-            k$ = INKEY$
-        LOOP UNTIL k$ = " " OR k$ = CHR$(13) OR k$ = CHR$(27)
+        IF prep > 0 THEN
+            deferDraw = TRUE
+            Level prep
+            deferDraw = FALSE
+            prepDone = TRUE
+            prep = 0
+        END IF
+        IF pendingEsc THEN
+            k$ = CHR$(27)
+            pendingEsc = FALSE
+        ELSEIF spaceHit THEN
+            k$ = " "
+            spaceHit = FALSE
+        ELSE
+            DO
+                k$ = INKEY$
+            LOOP UNTIL k$ = " " OR k$ = CHR$(13) OR k$ = CHR$(27)
+        END IF
         IF k$ = CHR$(27) THEN
             IF AskYesNo("Quit to the menu?") THEN
                 abortGame = TRUE
@@ -284,7 +309,11 @@ SUB Dialog (t1$, t2$, hint$)
             done = TRUE
         END IF
     LOOP UNTIL done
-    RedrawRows 7, 13
+    IF prepDone THEN
+        RedrawRows 2, 25
+    ELSE
+        RedrawRows 7, 13
+    END IF
 END SUB
 
 'DrawBanner:
@@ -540,24 +569,41 @@ FUNCTION GameOverScreen
     END IF
 
     DrawTable 10, rankOf(1), rankOf(2), attr, 14 + pal(6) * 16
-    Center 22, "ENTER = play again", attr
-    Center 23, "M = menu      ESC = quit", attr
-
+    sel = 1                                   '1 play again, 2 menu, 3 quit
+    hl = 7 * 16
     DO WHILE INKEY$ <> "": LOOP
     DO
-        k$ = INKEY$
+        IF sel = 1 THEN a1 = hl ELSE a1 = attr
+        IF sel = 2 THEN a2 = hl ELSE a2 = attr
+        IF sel = 3 THEN a3 = hl ELSE a3 = attr
+        PutStr 22, 23, "  PLAY AGAIN  ", a1
+        PutStr 22, 40, "  MENU  ", a2
+        PutStr 22, 51, "  QUIT  ", a3
+        Center 23, "arrow keys + ENTER      or P  M  Q", attr
+        DO
+            k$ = INKEY$
+        LOOP WHILE k$ = ""
         SELECT CASE k$
-            CASE CHR$(13), "y", "Y"
-                GameOverScreen = 1
+            CASE CHR$(0) + "K", CHR$(0) + "H"
+                sel = sel - 1
+                IF sel < 1 THEN sel = 3
+            CASE CHR$(0) + "M", CHR$(0) + "P", CHR$(9)
+                sel = sel + 1
+                IF sel > 3 THEN sel = 1
+            CASE CHR$(13)
+                EXIT DO
+            CASE "p", "P", "y", "Y"
+                sel = 1
                 EXIT DO
             CASE "m", "M"
-                GameOverScreen = 2
+                sel = 2
                 EXIT DO
-            CASE CHR$(27), "n", "N"
-                GameOverScreen = 3
+            CASE CHR$(27), "q", "Q", "n", "N"
+                sel = 3
                 EXIT DO
         END SELECT
     LOOP
+    GameOverScreen = sel
 END FUNCTION
 
 'Intro:
@@ -603,6 +649,7 @@ SUB Level (what)
             arena(r, c) = pal(4)
         NEXT c
     NEXT r
+    IF deferDraw THEN PollWait
 
     'outer wall
     FOR c = 1 TO 80
@@ -985,6 +1032,7 @@ SUB Level (what)
             sammy(1).col = 62: sammy(2).col = 18
             sammy(1).direction = 3: sammy(2).direction = 4
     END SELECT
+    IF deferDraw THEN PollWait
 
     'set up the snakes: body behind the head, head drawn in head colour
     FOR a = 1 TO 2
@@ -1017,6 +1065,7 @@ SUB Level (what)
         sammy(a).length = STARTLEN
     NEXT a
 
+    IF deferDraw THEN PollWait
     bonOn = FALSE: heartOn = FALSE: heartDone = FALSE
     FOR m = 1 TO MAXMINE
         minTime(m) = 0
@@ -1024,14 +1073,16 @@ SUB Level (what)
     doorState = 0
     IF what <> SAMELEVEL THEN fxCount = 0       'same level again: same fixed mines
     PlaceEggs
+    IF deferDraw THEN PollWait
     IF splitLevel THEN FixEggs
+    IF deferDraw THEN PollWait
     IF fxCount = 0 THEN
         PlaceFixedMines
     ELSE
         RunBfs TRUE
         IF NOT EggsReachable THEN PlaceFixedMines
     END IF
-    RedrawRows 2, 25
+    IF NOT deferDraw THEN RedrawRows 2, 25
 END SUB
 
 'MainMenu:
