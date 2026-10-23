@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 14
-'  2026-10-20
+'  Version 15
+'  2026-10-21
 '
 '  Written for QuickBASIC 4.5 (QB45), in two modules (NIBBLESD.BAS + NIBBLEUI.BAS).
 '  QB64-PE builds NIBBLESD_ALL.BAS, the same code merged into one file.
@@ -116,7 +116,7 @@ CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGGLYPH = 1        'character code redefined as a filled egg
-CONST VERSIONTXT = "VERSION 14"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 15"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -182,17 +182,19 @@ numPlayers = 1: speedSet = 5: speedUp = TRUE
 startLevel = 1: theme = 1: soundOn = TRUE: mineMode = 4: doorsOn = TRUE
 wallStone = TRUE: endMode = 1
 
-'Level order from easy to hard.  The numbers are the level definitions in
-'the Level SUB:  1 empty arena, 2 centre bar, 3 two columns, 7 fence,
-'13 bunkers, 11 box with gates, 14 pinwheel, 12 plus sign, 5 inner box,
-'15 diamond, 18 crossed diagonals, 4 offset bars, 9 diagonals, 19 fortress,
-'6 corridors, 10 dotted columns, 16 pillars, 8 comb, 17 serpentine,
-'20 nested boxes, 21 to 25 divided arenas (the doors are the only way over).
+'Level order from easy to hard (tightness, length of the routes and how
+'many places can only be reached through a narrow gap were measured).  The
+'numbers are the level definitions in the Level SUB:  1 empty arena,
+'2 centre bar, 3 two columns, 7 fence, 13 bunkers, 11 box with gates,
+'14 pinwheel, 15 diamond, 18 crossed diagonals, 4 offset bars, 12 plus sign,
+'19 fortress, 6 corridors, 9 diagonals, 16 pillars, 8 comb, 5 inner box,
+'17 serpentine, 20 nested boxes, 10 dotted columns, 21 to 25 divided arenas
+'(the doors are the only way over).
 lvOrder(1) = 1: lvOrder(2) = 2: lvOrder(3) = 3: lvOrder(4) = 7
-lvOrder(5) = 13: lvOrder(6) = 11: lvOrder(7) = 14: lvOrder(8) = 12
-lvOrder(9) = 5: lvOrder(10) = 15: lvOrder(11) = 18: lvOrder(12) = 4
-lvOrder(13) = 9: lvOrder(14) = 19: lvOrder(15) = 6: lvOrder(16) = 10
-lvOrder(17) = 16: lvOrder(18) = 8: lvOrder(19) = 17: lvOrder(20) = 20
+lvOrder(5) = 13: lvOrder(6) = 11: lvOrder(7) = 14: lvOrder(8) = 15
+lvOrder(9) = 18: lvOrder(10) = 4: lvOrder(11) = 12: lvOrder(12) = 19
+lvOrder(13) = 6: lvOrder(14) = 9: lvOrder(15) = 16: lvOrder(16) = 8
+lvOrder(17) = 5: lvOrder(18) = 17: lvOrder(19) = 20: lvOrder(20) = 10
 lvOrder(21) = 21: lvOrder(22) = 22: lvOrder(23) = 23: lvOrder(24) = 24
 lvOrder(25) = 25
 LoadConfig

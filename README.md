@@ -192,19 +192,19 @@ too).
 | 5 | Bunkers: four corner pockets | new |
 | 6 | A box with four gates | new |
 | 7 | Pinwheel | new |
-| 8 | A big plus sign | new |
-| 9 | Inner box | original |
-| 10 | Diamond | new |
-| 11 | Crossed diagonals | new |
-| 12 | Offset bars | original |
-| 13 | Diagonals | original |
-| 14 | Fortress | new |
-| 15 | Corridors | original |
-| 16 | Dotted columns | original |
-| 17 | Pillars | new |
-| 18 | Comb | original |
-| 19 | Serpentine | new |
-| 20 | Nested boxes | new |
+| 8 | Diamond | new |
+| 9 | Crossed diagonals | new |
+| 10 | Offset bars | original |
+| 11 | A big plus sign | new |
+| 12 | Fortress | new |
+| 13 | Corridors | original |
+| 14 | Diagonals | original |
+| 15 | Pillars | new |
+| 16 | Comb | original |
+| 17 | Inner box | original |
+| 18 | Serpentine | new |
+| 19 | Nested boxes | new |
+| 20 | Dotted columns | original |
 | 21 | Divide: a wall splits the arena | new |
 | 22 | Zigzag: a zigzag wall splits the arena | new |
 | 23 | Bulge: a wall with a bulge splits the arena | new |
@@ -365,6 +365,12 @@ Instead of the command line you can also open `NIBBLESD_ALL.BAS` in the QB64-PE 
 ## History
 
 Newest version first.
+
+### Version 15 - 2026-10-21
+
+- The levels are sorted again from easy to hard (the level numbers changed; see the table in
+  the Levels section). Places that can only be reached through a narrow gap (plus sign, inner
+  box, dotted columns, nested boxes) now count as harder
 
 ### Version 14 - 2026-10-20
 
