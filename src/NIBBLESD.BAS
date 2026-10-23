@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 13
-'  2026-10-19
+'  Version 14
+'  2026-10-20
 '
 '  Written for QuickBASIC 4.5 (QB45), in two modules (NIBBLESD.BAS + NIBBLEUI.BAS).
 '  QB64-PE builds NIBBLESD_ALL.BAS, the same code merged into one file.
@@ -116,7 +116,7 @@ CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGGLYPH = 1        'character code redefined as a filled egg
-CONST VERSIONTXT = "VERSION 13"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 14"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -636,7 +636,7 @@ SUB DrawHudCenter (eggFg)
 END SUB
 
 'DrawItems:
-'  Draws the eggs, the bonus diamond, the heart and the mines
+'  Draws the eggs, the bonus star, the heart and the mines
 SUB DrawItems
     FOR e = 1 TO MAXEGG
         IF eggRow(e) > 0 THEN PutChar eggRow(e), eggCol(e), eggChr, pal(9) + pal(4) * 16
@@ -734,7 +734,7 @@ END SUB
 
 'GlyphData$:
 '  Shape (16 lines of 8 pixels) of special character number k:
-'  1 egg (character 1), 2 heart (3), 3 diamond (4), 4 mine (15)
+'  1 egg (character 1), 2 heart (3), 3 star (4), 4 mine (15)
 FUNCTION GlyphData$ (k)
     SELECT CASE k
         CASE 1
@@ -744,8 +744,8 @@ FUNCTION GlyphData$ (k)
             g$ = CHR$(0) + CHR$(0) + CHR$(102) + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(126)
             g$ = g$ + CHR$(126) + CHR$(60) + CHR$(60) + CHR$(24) + CHR$(0) + CHR$(0) + CHR$(0) + CHR$(0)
         CASE 3
-            g$ = CHR$(0) + CHR$(24) + CHR$(24) + CHR$(60) + CHR$(60) + CHR$(126) + CHR$(126) + CHR$(255)
-            g$ = g$ + CHR$(255) + CHR$(126) + CHR$(126) + CHR$(60) + CHR$(60) + CHR$(24) + CHR$(24) + CHR$(0)
+            g$ = CHR$(0) + CHR$(24) + CHR$(24) + CHR$(60) + CHR$(60) + CHR$(255) + CHR$(255) + CHR$(126)
+            g$ = g$ + CHR$(60) + CHR$(60) + CHR$(102) + CHR$(102) + CHR$(195) + CHR$(195) + CHR$(0) + CHR$(0)
         CASE ELSE
             g$ = CHR$(0) + CHR$(24) + CHR$(24) + CHR$(153) + CHR$(126) + CHR$(126) + CHR$(255) + CHR$(255)
             g$ = g$ + CHR$(255) + CHR$(255) + CHR$(126) + CHR$(126) + CHR$(153) + CHR$(24) + CHR$(24) + CHR$(0)
@@ -824,7 +824,7 @@ SUB LoadConfig
 END SUB
 
 'LoadGlyphs:
-'  Redefines the characters of the egg, heart, diamond and mine as filled
+'  Redefines the characters of the egg, heart, star and mine as filled
 '  shapes (8 x 16 pixels).  Everything is read back; if the video card does
 '  not accept the new shapes the old ones are put back and the normal
 '  characters (hollow circle for the egg) stay in use.
@@ -1400,7 +1400,7 @@ SUB Sfx (n)
 END SUB
 
 'SpawnBonus:
-'  Puts a bonus diamond on a free spot
+'  Puts a bonus star on a free spot
 SUB SpawnBonus
     FindCell r, c
     bonRow = r
@@ -1492,7 +1492,7 @@ SUB Tick
     IF (tickCnt AND 3) = 0 THEN BlinkHud
     IF doorsOn OR splitLevel THEN DoorTick
 
-    'the bonus diamond flashes and disappears after a while
+    'the bonus star flashes and disappears after a while
     IF bonOn THEN
         bonTime = bonTime - 1
         IF bonTime <= 0 THEN
@@ -1504,16 +1504,11 @@ SUB Tick
         END IF
     END IF
 
-    'mines flash and disappear after a while
+    'mines stay steady and disappear after a while
     FOR m = 1 TO MAXMINE
         IF minTime(m) > 0 THEN
             minTime(m) = minTime(m) - 1
-            IF minTime(m) = 0 THEN
-                DrawCell minRow(m), minCol(m)
-            ELSEIF (minTime(m) AND 3) = 0 THEN
-                IF (minTime(m) AND 4) = 0 THEN fc = pal(15) ELSE fc = pal(9)
-                PutChar minRow(m), minCol(m), MINECHAR, fc + pal(4) * 16
-            END IF
+            IF minTime(m) = 0 THEN DrawCell minRow(m), minCol(m)
         END IF
     NEXT m
 
@@ -1678,3 +1673,4 @@ FUNCTION TryChooseDoor
         END IF
     NEXT attempt
 END FUNCTION
+

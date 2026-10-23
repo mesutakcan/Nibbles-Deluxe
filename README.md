@@ -29,7 +29,7 @@ consists of two modules for QuickBASIC 4.5, always called `NIBBLESD.BAS` (the ma
 - Stone walls (grey check pattern) or plain coloured walls
 - Animated title screen with a big logo
 - Eggs to collect on every level (8 + level number, at most 25)
-- Eggs, hearts, bonus diamonds and mines are drawn as filled shapes (redefined characters; the
+- Eggs, hearts, bonus stars and mines are drawn as filled shapes (redefined characters; the
   normal characters are used if the video card does not accept the new shapes, which is always
   the case in QB64-PE, see **Known differences in QB64-PE**)
 - The next level is built while the message box is on the screen, so you hardly ever wait
@@ -42,7 +42,7 @@ consists of two modules for QuickBASIC 4.5, always called `NIBBLESD.BAS` (the ma
 - The egg counter in the status line blinks when only 1 or 2 eggs are left
 - Side doors: now and then the walls open on both sides; go through one and come out on the other side
 - Turn buffer: fast key presses are never lost, and a snake can no longer reverse into itself
-- Flashing bonus diamonds and a bonus for completing a level
+- Flashing bonus stars and a bonus for completing a level
 - Lives that really count down (the heart in the status line blinks on the last life),
   game over screen with the winner
 - Player names can be changed in the menu
@@ -132,7 +132,8 @@ a folder that is write-protected.
 Menus: UP / DOWN select a line, LEFT / RIGHT (or SPACE) change a setting, ENTER starts the
 game (on the two name lines ENTER lets you type a name, on the **High scores** line it shows the
 table), ESC quits. The game over screen has three buttons, **PLAY AGAIN**, **MENU** and **QUIT**:
-select with the arrow keys or TAB and press ENTER, or press P, M or Q (ESC quits).
+select with the arrow keys or TAB and press ENTER, or press P, M or Q (ESC quits). The box is only
+as high as its content.
 
 ## How to play
 
@@ -142,7 +143,7 @@ if your snake hits a wall, the other snake, its own tail or a mine. If both head
 snakes die.
 
 - **Egg**: 100 points, and your snake grows by 3 pixels.
-- **Flashing diamond**: 500 points. It shows up now and then after you eat an egg and
+- **Flashing star**: 500 points. It shows up now and then after you eat an egg and
   disappears after a few seconds.
 - **Heart**: appears when only one egg is left, on the reachable spot that is farthest from
   the snakes. It flashes faster and faster; catch it in time for one extra life (at most 9
@@ -165,7 +166,7 @@ levels 21 to 25, where they always work (see Levels).
 
 If a snake crashes, the level starts again with the same walls. Red mines may appear
 randomly after an egg is eaten. There can be up to three mines on screen at once, never
-close to a snake head; each flashes and disappears after about 12 seconds. Hitting one costs
+close to a snake head; each stays steady and disappears after about 12 seconds. Hitting one costs
 a life.
 
 **Fixed mines** are placed when a level starts (from level 2: level number / 2, at most 6;
@@ -287,7 +288,7 @@ use the compiled EXE file; running from the IDE is meant for trying and editing 
 ### Known differences in QB64-PE
 
 The game redefines four characters of the VGA font (the filled shapes of the egg, the heart, the
-bonus diamond and the mine). QuickBASIC 4.5 does this by writing to the video card's character
+bonus star and the mine). QuickBASIC 4.5 does this by writing to the video card's character
 generator memory. QB64-PE does not support this: the change does not take place and the standard
 characters are displayed instead of the redefined ones. The game detects this and uses the normal
 characters. This is only a cosmetic difference; everything else works the same.
@@ -364,6 +365,13 @@ Instead of the command line you can also open `NIBBLESD_ALL.BAS` in the QB64-PE 
 ## History
 
 Newest version first.
+
+### Version 14 - 2026-10-20
+
+- The bonus diamond is now a **star** (new shape, text updated)
+- Mines no longer flash: they stay steady and disappear after a while
+- The game over screen is only as high as its content and is centred
+- The high score screen in the menu is a little smaller
 
 ### Version 13 - 2026-10-19
 

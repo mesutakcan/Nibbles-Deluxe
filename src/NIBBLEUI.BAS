@@ -5,8 +5,8 @@
 '  level layouts.  The main module is NIBBLESD.BAS.
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 13
-'  2026-10-19
+'  Version 14
+'  2026-10-20
 '
 '  Build: both modules are compiled with BC and linked together.
 '  For detailed information, please refer to the README.md file.
@@ -87,7 +87,7 @@ CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGGLYPH = 1        'character code redefined as a filled egg
-CONST VERSIONTXT = "VERSION 13"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 14"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -484,7 +484,7 @@ SUB DrawTable (r0, hl1, hl2, baseAttr, hlAttr)
         END IF
         ln$ = RIGHT$(" " + LTRIM$(STR$(i)), 2) + ". " + nn$ + SPACE$(8 - LEN(nn$)) + " " + sc$ + "   L" + lv$
         IF i = hl1 OR i = hl2 THEN ta = hlAttr ELSE ta = baseAttr
-        Center r0 + 1 + i, ln$, ta
+        Center r0 + i, ln$, ta
     NEXT i
 END SUB
 
@@ -538,22 +538,34 @@ SUB FillRect (r1, c1, r2, c2, ch, attr)
 END SUB
 
 'GameOverScreen:
-'  Shows the results and the high score table.
-'  Returns 1 = play again, 2 = menu, 3 = quit
+'  Shows the results and the high score table.  The box is only as high as
+'  its content.  Returns 1 = play again, 2 = menu, 3 = quit
 FUNCTION GameOverScreen
     attr = pal(5) + pal(6) * 16
-    DrawBox 2, 20, 24, 61, attr
+    hl = 7 * 16
+    hasRes = (numPlayers = 2)
+    IF rankOf(1) = 1 THEN hasRes = TRUE
+    'title, blank, players, blank, table (header + 10), blank, buttons, hint
+    rows = 1 + 1 + numPlayers + 1 + 11 + 1 + 1 + 1
+    IF victory THEN rows = rows + 1
+    IF hasRes THEN rows = rows + 1
+    top = (25 - (rows + 2)) \ 2 + 1
+    DrawBox top, 20, top + rows + 1, 61, attr
+    r = top + 1
     IF victory THEN
-        Center 3, "C O N G R A T U L A T I O N S !", attr
-        Center 4, "You completed all" + STR$(NUMLEVELS) + " levels!", attr
+        Center r, "C O N G R A T U L A T I O N S !", attr
+        r = r + 1
+        Center r, "You completed all" + STR$(NUMLEVELS) + " levels!", attr
     ELSE
-        Center 3, "G A M E   O V E R", attr
+        Center r, "G A M E   O V E R", attr
     END IF
+    r = r + 2
 
     FOR a = 1 TO numPlayers
         l$ = nm$(a) + SPACE$(8 - LEN(nm$(a))) + Num7$(sammy(a).score)
         IF rankOf(a) > 0 THEN l$ = l$ + "   RANK" + STR$(rankOf(a))
-        Center 5 + a, l$, attr
+        Center r, l$, attr
+        r = r + 1
     NEXT a
     IF numPlayers = 2 THEN
         IF sammy(1).score > sammy(2).score THEN
@@ -563,23 +575,27 @@ FUNCTION GameOverScreen
         ELSE
             res$ = "IT IS A DRAW!"
         END IF
-        Center 8, res$, attr
+        Center r, res$, attr
+        r = r + 1
     ELSEIF rankOf(1) = 1 THEN
-        Center 8, "*  NEW HIGH SCORE!  *", attr
+        Center r, "*  NEW HIGH SCORE!  *", attr
+        r = r + 1
     END IF
+    r = r + 1
 
-    DrawTable 10, rankOf(1), rankOf(2), attr, 14 + pal(6) * 16
+    DrawTable r, rankOf(1), rankOf(2), attr, 14 + pal(6) * 16
+    r = r + 12                                'buttons row (hint row below it)
+
     sel = 1                                   '1 play again, 2 menu, 3 quit
-    hl = 7 * 16
     DO WHILE INKEY$ <> "": LOOP
     DO
         IF sel = 1 THEN a1 = hl ELSE a1 = attr
         IF sel = 2 THEN a2 = hl ELSE a2 = attr
         IF sel = 3 THEN a3 = hl ELSE a3 = attr
-        PutStr 22, 23, "  PLAY AGAIN  ", a1
-        PutStr 22, 40, "  MENU  ", a2
-        PutStr 22, 51, "  QUIT  ", a3
-        Center 23, "arrow keys + ENTER      or P  M  Q", attr
+        PutStr r, 23, "  PLAY AGAIN  ", a1
+        PutStr r, 40, "  MENU  ", a2
+        PutStr r, 51, "  QUIT  ", a3
+        Center r + 1, "arrow keys + ENTER      or P  M  Q", attr
         DO
             k$ = INKEY$
         LOOP WHILE k$ = ""
@@ -616,7 +632,7 @@ SUB Intro
 
     Center 13, "Steer your snake around the arena and collect all the eggs to", 7
     Center 14, "finish a level.  Every egg makes you longer and scores 100 points.", 7
-    Center 15, "Catch the flashing diamond for a bonus and the heart for an extra life!", 7
+    Center 15, "Catch the flashing star for a bonus and the heart for an extra life!", 7
     Center 16, "Avoid walls, the other snake, your own tail and the red mines.", 7
     Center 17, "Side doors open now and then - go through and exit on the other side!", 7
 
@@ -1190,9 +1206,9 @@ END SUB
 '  Full screen high score table (from the menu)
 SUB ShowScores
     ClearScreen 7
-    DrawBox 3, 24, 20, 57, 11
+    DrawBox 3, 24, 17, 57, 11
     DrawTable 4, 0, 0, 7, 14
-    Center 18, "Press any key", 8
+    Center 16, "Press any key", 8
     DO WHILE INKEY$ <> "": LOOP
     DO
     LOOP WHILE INKEY$ = ""
