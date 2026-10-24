@@ -5,8 +5,8 @@
 '  level layouts.  The main module is NIBBLESD.BAS.
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 15
-'  2026-10-21
+'  Version 16
+'  2026-10-22
 '
 '  Build: both modules are compiled with BC and linked together.
 '  For detailed information, please refer to the README.md file.
@@ -47,6 +47,7 @@ DECLARE FUNCTION IsWallColor (c)
 DECLARE FUNCTION MainMenu ()
 DECLARE FUNCTION Num7$ (v&)
 DECLARE SUB ApplyTheme ()
+DECLARE SUB BorderPos (u, r, c)
 DECLARE SUB Center (row, text$, attr)
 DECLARE SUB ChangeSetting (sel, d)
 DECLARE SUB ClearScreen (attr)
@@ -87,7 +88,7 @@ CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGGLYPH = 1        'character code redefined as a filled egg
-CONST VERSIONTXT = "VERSION 15"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 16"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -103,6 +104,7 @@ COMMON SHARED speedSet, speedUp, startLevel, theme, soundOn, mineMode
 COMMON SHARED doorsOn, wallStone, endMode, bonOn, fxCount, heartOn
 COMMON SHARED heartDone, doorState, abortGame, victory, splitLevel
 COMMON SHARED prepWhat, spaceHit, pendingEsc, deferDraw
+COMMON SHARED eggChr, fxGone()
 
 'ApplyTheme:
 '  Fills the colour table.  Entries:
@@ -193,6 +195,24 @@ FUNCTION BannerRow$ (i)
         CASE ELSE: BannerRow$ = "#   #  #####  ####   ####   #####  #####  #### "
     END SELECT
 END FUNCTION
+
+'BorderPos:
+'  Text cell (r, c) of border position u (0 to 251).  The positions run
+'  clockwise around the screen edge, starting at the top left corner.  A
+'  text cell is about twice as high as it is wide, so a step along the left
+'  and right edges is worth 2 units and a step along the top and bottom
+'  edges 1 unit: equal distances in units look equal on the screen.
+SUB BorderPos (u, r, c)
+    IF u < 80 THEN
+        r = 1: c = u + 1                       'top edge
+    ELSEIF u < 126 THEN
+        r = 2 + (u - 80) \ 2: c = 80           'right edge
+    ELSEIF u < 206 THEN
+        r = 25: c = 80 - (u - 126)             'bottom edge
+    ELSE
+        r = 24 - (u - 206) \ 2: c = 1          'left edge
+    END IF
+END SUB
 
 'Center:
 '  Prints text centred on the given row
@@ -310,6 +330,9 @@ SUB Dialog (t1$, t2$, hint$)
         END IF
     LOOP UNTIL done
     IF prepDone THEN
+        FOR m = 1 TO MAXFIX                     'the new arena shows all mines again
+            fxGone(m) = FALSE
+        NEXT m
         RedrawRows 2, 25
     ELSE
         RedrawRows 7, 13
@@ -1224,28 +1247,40 @@ SUB ShowWait
 END SUB
 
 'SparklePause:
-'  Flashing border and colour cycling logo until a key is pressed
+'  Title screen animation until a key is pressed: the game pieces (egg,
+'  diamond, mine, heart) travel clockwise around the screen edge, every
+'  second piece is dark and they take turns blinking.  The logo cycles its
+'  colours.
 SUB SparklePause
+    CONST NB = 28                              'number of pieces (a divisor of 252, multiple of 4)
+    DIM oldP(1 TO NB)
     ph = 0
+    FOR i = 1 TO NB
+        oldP(i) = -1
+    NEXT i
     DO WHILE INKEY$ <> "": LOOP
     DO
-        FOR p = 0 TO 205
-            IF p < 80 THEN
-                r = 1: c = p + 1
-            ELSEIF p < 104 THEN
-                r = p - 80 + 2: c = 80
-            ELSEIF p < 183 THEN
-                r = 25: c = 79 - (p - 104)
-            ELSE
-                r = 24 - (p - 183): c = 1
-            END IF
-            IF ((p + ph) MOD 5) = 0 THEN
-                IF p AND 1 THEN fc = 12 ELSE fc = 14
-                PutChar r, c, 15, fc
-            ELSE
+        'erase the pieces of the last frame
+        FOR i = 1 TO NB
+            IF oldP(i) >= 0 THEN
+                BorderPos oldP(i), r, c
                 PutChar r, c, 32, 7
             END IF
-        NEXT p
+        NEXT i
+        'draw them at their new places
+        FOR i = 1 TO NB
+            p = ((i - 1) * (252 \ NB) + ph) MOD 252
+            SELECT CASE (i - 1) MOD 4
+                CASE 0: ch = eggChr: fc = 15
+                CASE 1: ch = 4: fc = 10
+                CASE 2: ch = MINECHAR: fc = 12
+                CASE ELSE: ch = 3: fc = 12
+            END SELECT
+            IF ((i + ph \ 2) AND 1) = 0 THEN fc = 8
+            BorderPos p, r, c
+            PutChar r, c, ch, fc
+            oldP(i) = p
+        NEXT i
         DrawBanner 3, ph, FALSE
         IF ph AND 1 THEN
             Center 22, "Press any key to continue", 15
@@ -1253,6 +1288,7 @@ SUB SparklePause
             Center 22, "Press any key to continue", 8
         END IF
         ph = ph + 1
+        IF ph >= 1260 THEN ph = 0               'all cycles (5, 4, 252) fit into 1260
         DelayMs 80
     LOOP WHILE INKEY$ = ""
 END SUB

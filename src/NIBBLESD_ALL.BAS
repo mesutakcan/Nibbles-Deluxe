@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 15
-'  2026-10-21
+'  Version 16
+'  2026-10-22
 '
 '  Single file edition for QB64-PE: the same code as NIBBLESD.BAS and
 '  NIBBLEUI.BAS (the two QB45 modules), merged into one file.
@@ -59,6 +59,7 @@ DECLARE FUNCTION PointIsThere (row, col)
 DECLARE SUB AddScore (a, pts)
 DECLARE SUB ApplyTheme ()
 DECLARE SUB BlinkHud ()
+DECLARE SUB BorderPos (u, r, c)
 DECLARE SUB Calibrate ()
 DECLARE SUB Center (row, text$, attr)
 DECLARE SUB ChangeSetting (sel, d)
@@ -92,6 +93,7 @@ DECLARE SUB Level (what)
 DECLARE SUB LoadConfig ()
 DECLARE SUB LoadGlyphs ()
 DECLARE SUB LoadHigh ()
+DECLARE SUB MineBoom (rr, cc)
 DECLARE SUB PlaceEggs ()
 DECLARE SUB PlaceFixedMines ()
 DECLARE SUB PlayNibbles ()
@@ -129,7 +131,7 @@ CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGGLYPH = 1        'character code redefined as a filled egg
-CONST VERSIONTXT = "VERSION 15"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 16"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -142,16 +144,17 @@ DIM SHARED speedSet, speedUp, startLevel, theme, soundOn, mineMode
 DIM SHARED doorsOn, wallStone, endMode, bonOn, fxCount, heartOn
 DIM SHARED heartDone, doorState, abortGame, victory, splitLevel
 DIM SHARED prepWhat, spaceHit, pendingEsc, deferDraw
+DIM SHARED eggChr
 
 'The playfield is 80 x 50 "pixels": every text character holds two pixels
 '(upper and lower half block).  arena() stores the colour of each pixel.
 DIM SHARED qd(1 TO 2, 1 TO 3)                      'buffered turns per snake
 DIM SHARED minRow(1 TO MAXMINE), minCol(1 TO MAXMINE)
-DIM SHARED hitMine(1 TO 2)
+DIM SHARED hitMine(1 TO 2), mineHitRow(1 TO 2), mineHitCol(1 TO 2)
 DIM SHARED eggRow(1 TO MAXEGG), eggCol(1 TO MAXEGG)
 DIM SHARED fxRow(1 TO MAXFIX), fxCol(1 TO MAXFIX)     'fixed mines
 DIM SHARED bfsD(0 TO 3999), bfsQ(0 TO 3999)        'path search (one entry per pixel)
-DIM SHARED eggChr, glyphsOn
+DIM SHARED glyphsOn
 DIM SHARED gCode(1 TO 4), gNew$(1 TO 4), gOld$(1 TO 4)
 DIM SHARED loopsPerMs AS SINGLE
 DIM SHARED bonRow, bonCol, bonTime, eggLeft, eggTotal
@@ -173,6 +176,7 @@ DIM SHARED hsLevel(1 TO 10)
 DIM SHARED rankOf(1 TO 2)
 DIM SHARED hsScore(1 TO 10) AS LONG                       'high score table
 DIM SHARED nm$(1 TO 2)
+DIM SHARED fxGone(1 TO MAXFIX)                           'exploded fixed mines (not drawn)
 
 '---- Main program --------------------------------------------------------------
 RANDOMIZE TIMER
@@ -336,29 +340,30 @@ END SUB
 'CellBusy:
 '  TRUE if an item (egg, bonus, heart, mine) already sits on the text cell
 FUNCTION CellBusy (rr, cc)
-    CellBusy = FALSE
+    CellBusy = TRUE
     FOR e = 1 TO MAXEGG
-        IF eggRow(e) = rr AND eggCol(e) = cc THEN CellBusy = TRUE
+        IF eggRow(e) = rr AND eggCol(e) = cc THEN EXIT FUNCTION
     NEXT e
     IF bonOn THEN
-        IF bonRow = rr AND bonCol = cc THEN CellBusy = TRUE
+        IF bonRow = rr AND bonCol = cc THEN EXIT FUNCTION
     END IF
     IF heartOn THEN
-        IF heartRow = rr AND heartCol = cc THEN CellBusy = TRUE
+        IF heartRow = rr AND heartCol = cc THEN EXIT FUNCTION
     END IF
     FOR m = 1 TO MAXMINE
         IF minTime(m) > 0 THEN
-            IF minRow(m) = rr AND minCol(m) = cc THEN CellBusy = TRUE
+            IF minRow(m) = rr AND minCol(m) = cc THEN EXIT FUNCTION
         END IF
     NEXT m
     FOR m = 1 TO fxCount
-        IF fxRow(m) = rr AND fxCol(m) = cc THEN CellBusy = TRUE
+        IF fxRow(m) = rr AND fxCol(m) = cc THEN EXIT FUNCTION
     NEXT m
     IF doorState > 0 THEN                       'keep the door lanes free
         IF rr >= doorRow AND rr <= doorRow + 3 THEN
-            IF cc <= 7 OR cc >= 74 THEN CellBusy = TRUE
+            IF cc <= 7 OR cc >= 74 THEN EXIT FUNCTION
         END IF
     END IF
+    CellBusy = FALSE
 END FUNCTION
 
 'DeathAnim:
@@ -448,15 +453,17 @@ END SUB
 '  TRUE if no snake is inside the door cells selected by mask
 '  (bits: 1 = cell 0, 2 = cell 1, 4 = cell 2, 8 = cell 3)
 FUNCTION DoorFree (mask)
-    DoorFree = TRUE
+    DoorFree = FALSE
+    bit = 1
     FOR k = 0 TO 3
-        bit = 2 ^ k
         IF mask AND bit THEN
             r = doorRow + k
-            IF arena(r * 2 - 1, 1) <> pal(4) OR arena(r * 2, 1) <> pal(4) THEN DoorFree = FALSE
-            IF arena(r * 2 - 1, 80) <> pal(4) OR arena(r * 2, 80) <> pal(4) THEN DoorFree = FALSE
+            IF arena(r * 2 - 1, 1) <> pal(4) OR arena(r * 2, 1) <> pal(4) THEN EXIT FUNCTION
+            IF arena(r * 2 - 1, 80) <> pal(4) OR arena(r * 2, 80) <> pal(4) THEN EXIT FUNCTION
         END IF
+        bit = bit + bit
     NEXT k
+    DoorFree = TRUE
 END FUNCTION
 
 'DoorPass:
@@ -661,7 +668,7 @@ SUB DrawItems
         IF minTime(m) > 0 THEN PutChar minRow(m), minCol(m), MINECHAR, pal(15) + pal(4) * 16
     NEXT m
     FOR m = 1 TO fxCount
-        PutChar fxRow(m), fxCol(m), MINECHAR, pal(15) + pal(4) * 16
+        IF NOT fxGone(m) THEN PutChar fxRow(m), fxCol(m), MINECHAR, pal(15) + pal(4) * 16
     NEXT m
 END SUB
 
@@ -767,24 +774,25 @@ END FUNCTION
 'ItemInRect:
 '  TRUE if an egg, bonus, heart or mine sits inside the text cell rectangle
 FUNCTION ItemInRect (r1, c1, r2, c2)
-    ItemInRect = FALSE
+    ItemInRect = TRUE
     FOR e = 1 TO eggTotal
-        IF eggRow(e) >= r1 AND eggRow(e) <= r2 AND eggCol(e) >= c1 AND eggCol(e) <= c2 THEN ItemInRect = TRUE
+        IF eggRow(e) >= r1 AND eggRow(e) <= r2 AND eggCol(e) >= c1 AND eggCol(e) <= c2 THEN EXIT FUNCTION
     NEXT e
     IF bonOn THEN
-        IF bonRow >= r1 AND bonRow <= r2 AND bonCol >= c1 AND bonCol <= c2 THEN ItemInRect = TRUE
+        IF bonRow >= r1 AND bonRow <= r2 AND bonCol >= c1 AND bonCol <= c2 THEN EXIT FUNCTION
     END IF
     IF heartOn THEN
-        IF heartRow >= r1 AND heartRow <= r2 AND heartCol >= c1 AND heartCol <= c2 THEN ItemInRect = TRUE
+        IF heartRow >= r1 AND heartRow <= r2 AND heartCol >= c1 AND heartCol <= c2 THEN EXIT FUNCTION
     END IF
     FOR m = 1 TO MAXMINE
         IF minTime(m) > 0 THEN
-            IF minRow(m) >= r1 AND minRow(m) <= r2 AND minCol(m) >= c1 AND minCol(m) <= c2 THEN ItemInRect = TRUE
+            IF minRow(m) >= r1 AND minRow(m) <= r2 AND minCol(m) >= c1 AND minCol(m) <= c2 THEN EXIT FUNCTION
         END IF
     NEXT m
     FOR m = 1 TO fxCount
-        IF fxRow(m) >= r1 AND fxRow(m) <= r2 AND fxCol(m) >= c1 AND fxCol(m) <= c2 THEN ItemInRect = TRUE
+        IF fxRow(m) >= r1 AND fxRow(m) <= r2 AND fxCol(m) >= c1 AND fxCol(m) <= c2 THEN EXIT FUNCTION
     NEXT m
+    ItemInRect = FALSE
 END FUNCTION
 
 'LoadConfig:
@@ -925,6 +933,85 @@ SUB LoadHigh
     END IF
 END SUB
 
+'MineBoom:
+'  Explosion on the text cell (rr, cc) where a snake hit a mine: a short
+'  flash in the cell and 16 sparks that fly out in all directions, slow
+'  down and change colour (white, yellow, red, dark red, grey).  Every
+'  spark is one pixel (half block).  Only the screen is changed, not
+'  arena(); the playfield is redrawn at the end.  The sound is played in
+'  the background, so the timing is the same with and without sound.
+SUB MineBoom (rr, cc)
+    CONST NP = 16
+    DIM x(1 TO NP) AS SINGLE, y(1 TO NP) AS SINGLE
+    DIM vx(1 TO NP) AS SINGLE, vy(1 TO NP) AS SINGLE
+    DIM ox(1 TO NP), oy(1 TO NP)
+    DIM ang AS SINGLE, sp AS SINGLE
+
+    Sfx 10
+    FOR m = 1 TO fxCount                        'a fixed mine that explodes is not drawn again
+        IF fxRow(m) = rr AND fxCol(m) = cc THEN fxGone(m) = TRUE
+    NEXT m
+    FOR i = 1 TO NP
+        ang = RND * 6.2832
+        sp = 1.2 + RND * 2
+        vx(i) = COS(ang) * sp
+        vy(i) = SIN(ang) * sp
+        x(i) = cc
+        y(i) = rr * 2 - 1 + INT(RND * 2)
+        ox(i) = 0
+        oy(i) = 0
+    NEXT i
+
+    FOR f = 0 TO 10
+        'erase the sparks of the last frame
+        FOR i = 1 TO NP
+            IF ox(i) > 0 THEN
+                rw = (oy(i) + 1) \ 2
+                DrawCell rw, ox(i)
+                ox(i) = 0
+            END IF
+        NEXT i
+
+        'flash in the cell of the mine
+        SELECT CASE f
+            CASE 0: PutChar rr, cc, 219, 15
+            CASE 1: PutChar rr, cc, 219, 14
+            CASE 2: PutChar rr, cc, 178, 12 + pal(4) * 16
+            CASE 3: DrawCell rr, cc
+        END SELECT
+
+        'colour of this frame
+        SELECT CASE f
+            CASE 0, 1: pc = 15
+            CASE 2, 3: pc = 14
+            CASE 4, 5, 6: pc = 12
+            CASE 7, 8: pc = 4
+            CASE ELSE: pc = 8
+        END SELECT
+
+        'move and draw the sparks
+        FOR i = 1 TO NP
+            x(i) = x(i) + vx(i)
+            y(i) = y(i) + vy(i)
+            vx(i) = vx(i) * .86
+            vy(i) = vy(i) * .86
+            px = INT(x(i) + .5)
+            py = INT(y(i) + .5)
+            IF px >= 1 AND px <= 80 AND py >= 3 AND py <= 50 THEN
+                oldc = arena(py, px)
+                arena(py, px) = pc
+                rw = (py + 1) \ 2
+                DrawCell rw, px
+                arena(py, px) = oldc
+                ox(i) = px
+                oy(i) = py
+            END IF
+        NEXT i
+        DelayMs 75
+    NEXT f
+    RedrawRows 2, 25
+END SUB
+
 'MineSpotOk:
 '  TRUE if a fixed mine may be placed on text cell (r, c): free, open
 '  space around it, far from the snake heads, not next to another mine
@@ -1032,6 +1119,9 @@ SUB PlayNibbles
     rankOf(1) = 0
     rankOf(2) = 0
     tickCnt = 0
+    FOR m = 1 TO MAXFIX
+        fxGone(m) = FALSE
+    NEXT m
     FOR a = 1 TO 2
         sammy(a).lives = 5
         sammy(a).score = 0
@@ -1068,9 +1158,16 @@ SUB PlayNibbles
         IF abortGame THEN EXIT DO
 
         IF anyDead THEN
-            Sfx 3
+            boom = FALSE
+            FOR a = 1 TO numPlayers
+                IF hitMine(a) THEN boom = TRUE
+            NEXT a
+            IF NOT boom THEN Sfx 3                    'a mine has its own sound
             FOR a = 1 TO numPlayers
                 IF NOT sammy(a).alive THEN sammy(a).lives = sammy(a).lives - 1
+            NEXT a
+            FOR a = 1 TO numPlayers
+                IF hitMine(a) THEN MineBoom mineHitRow(a), mineHitCol(a)
             NEXT a
             variant = INT(RND * 3) + 1
             FOR a = 1 TO numPlayers
@@ -1398,15 +1495,16 @@ END SUB
 SUB Sfx (n)
     IF NOT soundOn THEN EXIT SUB
     SELECT CASE n
-        CASE 1: PLAY "MBT160O1>L20CDEDCDL10ECC"        'level start
-        CASE 2: PLAY "MBO0L16>CCCE"                    'number eaten
-        CASE 3: PLAY "MBO0L32EFGEFDC"                  'crash
-        CASE 4: PLAY "MBT160O2L16CEGO3CEGO4C"          'level complete
-        CASE 5: PLAY "MBT200O3L32EGB>CL16E"            'bonus
-        CASE 6: PLAY "MBT200O1L32DC"                    'mine appears
-        CASE 7: PLAY "MBT220O2L32GBGB"                  'heart appears
-        CASE 8: PLAY "MBT180O3L16CEGB>CE"               'heart caught
-        CASE 9: PLAY "MBT200O2L32CEC"                   'door warning
+        CASE 1: PLAY "MBMNT160O1>L20CDEDCDL10ECC"        'level start
+        CASE 2: PLAY "MBMNT160O0L16>CCCE"             'number eaten
+        CASE 3: PLAY "MBMNT160O0L32EFGEFDC"             'crash
+        CASE 4: PLAY "MBMNT160O2L16CEGO3CEGO4C"          'level complete
+        CASE 5: PLAY "MBMNT200O3L32EGB>CL16E"            'bonus
+        CASE 6: PLAY "MBMNT200O1L32DC"                    'mine appears
+        CASE 7: PLAY "MBMNT220O2L32GBGB"                  'heart appears
+        CASE 8: PLAY "MBMNT180O3L16CEGB>CE"               'heart caught
+        CASE 9: PLAY "MBMNT200O2L32CEC"                   'door warning
+        CASE 10: PLAY "T255MSL64O1GFEDCO0BAGFEDCP64O2GFEDCO1BAGFEDC"   'mine explosion
     END SELECT
 END SUB
 
@@ -1581,6 +1679,8 @@ SUB Tick
                 IF minRow(m) = rr AND minCol(m) = c THEN
                     dead = TRUE
                     hitMine(a) = TRUE
+                    mineHitRow(a) = rr
+                    mineHitCol(a) = c
                     minTime(m) = 0
                     DrawCell minRow(m), minCol(m)
                 END IF
@@ -1590,6 +1690,8 @@ SUB Tick
             IF fxRow(m) = rr AND fxCol(m) = c THEN
                 dead = TRUE
                 hitMine(a) = TRUE
+                mineHitRow(a) = rr
+                mineHitCol(a) = c
             END IF
         NEXT m
 
@@ -1891,6 +1993,9 @@ SUB Dialog (t1$, t2$, hint$)
         END IF
     LOOP UNTIL done
     IF prepDone THEN
+        FOR m = 1 TO MAXFIX                     'the new arena shows all mines again
+            fxGone(m) = FALSE
+        NEXT m
         RedrawRows 2, 25
     ELSE
         RedrawRows 7, 13
@@ -2804,29 +2909,59 @@ SUB ShowWait
     Center 12, "preparing the arena...", attr
 END SUB
 
+'BorderPos:
+'  Text cell (r, c) of border position u (0 to 251).  The positions run
+'  clockwise around the screen edge, starting at the top left corner.  A
+'  text cell is about twice as high as it is wide, so a step along the left
+'  and right edges is worth 2 units and a step along the top and bottom
+'  edges 1 unit: equal distances in units look equal on the screen.
+SUB BorderPos (u, r, c)
+    IF u < 80 THEN
+        r = 1: c = u + 1                       'top edge
+    ELSEIF u < 126 THEN
+        r = 2 + (u - 80) \ 2: c = 80           'right edge
+    ELSEIF u < 206 THEN
+        r = 25: c = 80 - (u - 126)             'bottom edge
+    ELSE
+        r = 24 - (u - 206) \ 2: c = 1          'left edge
+    END IF
+END SUB
+
 'SparklePause:
-'  Flashing border and colour cycling logo until a key is pressed
+'  Title screen animation until a key is pressed: the game pieces (egg,
+'  diamond, mine, heart) travel clockwise around the screen edge, every
+'  second piece is dark and they take turns blinking.  The logo cycles its
+'  colours.
 SUB SparklePause
+    CONST NB = 28                              'number of pieces (a divisor of 252, multiple of 4)
+    DIM oldP(1 TO NB)
     ph = 0
+    FOR i = 1 TO NB
+        oldP(i) = -1
+    NEXT i
     DO WHILE INKEY$ <> "": LOOP
     DO
-        FOR p = 0 TO 205
-            IF p < 80 THEN
-                r = 1: c = p + 1
-            ELSEIF p < 104 THEN
-                r = p - 80 + 2: c = 80
-            ELSEIF p < 183 THEN
-                r = 25: c = 79 - (p - 104)
-            ELSE
-                r = 24 - (p - 183): c = 1
-            END IF
-            IF ((p + ph) MOD 5) = 0 THEN
-                IF p AND 1 THEN fc = 12 ELSE fc = 14
-                PutChar r, c, 15, fc
-            ELSE
+        'erase the pieces of the last frame
+        FOR i = 1 TO NB
+            IF oldP(i) >= 0 THEN
+                BorderPos oldP(i), r, c
                 PutChar r, c, 32, 7
             END IF
-        NEXT p
+        NEXT i
+        'draw them at their new places
+        FOR i = 1 TO NB
+            p = ((i - 1) * (252 \ NB) + ph) MOD 252
+            SELECT CASE (i - 1) MOD 4
+                CASE 0: ch = eggChr: fc = 15
+                CASE 1: ch = 4: fc = 10
+                CASE 2: ch = MINECHAR: fc = 12
+                CASE ELSE: ch = 3: fc = 12
+            END SELECT
+            IF ((i + ph \ 2) AND 1) = 0 THEN fc = 8
+            BorderPos p, r, c
+            PutChar r, c, ch, fc
+            oldP(i) = p
+        NEXT i
         DrawBanner 3, ph, FALSE
         IF ph AND 1 THEN
             Center 22, "Press any key to continue", 15
@@ -2834,6 +2969,7 @@ SUB SparklePause
             Center 22, "Press any key to continue", 8
         END IF
         ph = ph + 1
+        IF ph >= 1260 THEN ph = 0               'all cycles (5, 4, 252) fit into 1260
         DelayMs 80
     LOOP WHILE INKEY$ = ""
 END SUB

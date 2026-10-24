@@ -27,7 +27,8 @@ consists of two modules for QuickBASIC 4.5, always called `NIBBLESD.BAS` (the ma
 - Settings menu: players, speed, colour theme, start level, sound, mines, doors, walls, ending, player names
 - Five colour themes: Classic, Night, Forest, Ocean, Desert
 - Stone walls (grey check pattern) or plain coloured walls
-- Animated title screen with a big logo
+- Animated title screen with a big logo; the game pieces (egg, bonus star, mine and heart)
+  travel around the screen edge and blink in turn
 - Eggs to collect on every level (8 + level number, at most 25)
 - Eggs, hearts, bonus stars and mines are drawn as filled shapes (redefined characters; the
   normal characters are used if the video card does not accept the new shapes, which is always
@@ -38,6 +39,7 @@ consists of two modules for QuickBASIC 4.5, always called `NIBBLESD.BAS` (the ma
 - Two-tone striped snake bodies
 - Red mines: random mines pop up during play, fixed mines are placed when a level starts
   (the game checks that every egg stays reachable); mode OFF / RANDOM / FIXED / BOTH
+- A snake that hits a mine blows up: a flash and a shower of flying sparks with an explosion sound
 - Three death animations, chosen at random
 - The egg counter in the status line blinks when only 1 or 2 eggs are left
 - Side doors: now and then the walls open on both sides; go through one and come out on the other side
@@ -167,7 +169,8 @@ levels 21 to 25, where they always work (see Levels).
 If a snake crashes, the level starts again with the same walls. Red mines may appear
 randomly after an egg is eaten. There can be up to three mines on screen at once, never
 close to a snake head; each stays steady and disappears after about 12 seconds. Hitting one costs
-a life.
+a life, and the mine explodes with a flash, flying sparks and an explosion sound. A fixed mine that
+has exploded is not drawn again until the level is built anew.
 
 **Fixed mines** are placed when a level starts (from level 2: level number / 2, at most 6;
 with two players they come in point symmetric pairs, so neither side has an advantage) and
@@ -365,6 +368,20 @@ Instead of the command line you can also open `NIBBLESD_ALL.BAS` in the QB64-PE 
 ## History
 
 Newest version first.
+
+### Version 16 - 2026-10-22
+
+- New **mine explosion**: when a snake hits a mine, a flash appears in the mine's cell and 16
+  sparks fly out from it, slow down and change colour (white, yellow, red, dark red, grey),
+  together with an explosion sound; then the usual death animation follows. A fixed mine that
+  has exploded is not drawn again until the level is built anew
+- New **title screen animation**: the egg, the bonus star, the mine and the heart travel around
+  the screen edge and blink in turn. The pieces are spaced evenly and move at the same speed on
+  the sides and on the top and bottom, although a text cell is twice as high as it is wide
+- Every sound now sets its own tempo and note style, so a sound can no longer change the way
+  the next one is played (the egg sound used to get faster after the explosion sound)
+- Small speed-ups in the code that checks free cells and door lanes (placing hearts, mines and
+  doors)
 
 ### Version 15 - 2026-10-21
 
