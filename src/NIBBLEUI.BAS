@@ -5,8 +5,8 @@
 '  level layouts.  The main module is NIBBLESD.BAS.
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 16
-'  2026-10-22
+'  Version 17
+'  2026-10-27
 '
 '  Build: both modules are compiled with BC and linked together.
 '  For detailed information, please refer to the README.md file.
@@ -72,6 +72,7 @@ DECLARE SUB RedrawRows (r1, r2)
 DECLARE SUB RunBfs (useDoors)
 DECLARE SUB FixEggs ()
 DECLARE SUB PollWait ()
+DECLARE SUB PrepareHeart ()
 DECLARE SUB SetBlink (flag)
 DECLARE SUB ShowScores ()
 DECLARE SUB ShowWait ()
@@ -88,7 +89,7 @@ CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGGLYPH = 1        'character code redefined as a filled egg
-CONST VERSIONTXT = "VERSION 16"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 17"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST STARTOVER = 1       'parameters of the Level SUB
@@ -105,6 +106,8 @@ COMMON SHARED doorsOn, wallStone, endMode, bonOn, fxCount, heartOn
 COMMON SHARED heartDone, doorState, abortGame, victory, splitLevel
 COMMON SHARED prepWhat, spaceHit, pendingEsc, deferDraw
 COMMON SHARED eggChr, fxGone()
+COMMON SHARED pillOn, pillCnt
+COMMON SHARED dlgBg
 
 'ApplyTheme:
 '  Fills the colour table.  Entries:
@@ -290,6 +293,7 @@ SUB Dialog (t1$, t2$, hint$)
     c1 = (80 - w) \ 2 + 1
     c2 = c1 + w - 1
     attr = pal(5) + pal(6) * 16
+    IF dlgBg > 0 THEN attr = 15 + dlgBg * 16     'own colour (level complete)
     DO WHILE INKEY$ <> "": LOOP
     prep = prepWhat
     prepWhat = 0
@@ -663,7 +667,6 @@ SUB Intro
     Center 19, "PLAYER 2  -  W A S D     (W A S D also work in 1 player mode)", 13
     Center 20, "P = pause           ESC = quit to menu", 7
 
-    IF soundOn THEN PLAY "MBT160O1L8CDEDCDL4ECC"
     SparklePause
 END SUB
 
@@ -1106,6 +1109,7 @@ SUB Level (what)
 
     IF deferDraw THEN PollWait
     bonOn = FALSE: heartOn = FALSE: heartDone = FALSE
+    pillOn = FALSE: pillCnt = 0
     FOR m = 1 TO MAXMINE
         minTime(m) = 0
     NEXT m
@@ -1121,6 +1125,7 @@ SUB Level (what)
         RunBfs TRUE
         IF NOT EggsReachable THEN PlaceFixedMines
     END IF
+    PrepareHeart                                 'places of the heart, near the corners
     IF NOT deferDraw THEN RedrawRows 2, 25
 END SUB
 
@@ -1248,12 +1253,36 @@ END SUB
 
 'SparklePause:
 '  Title screen animation until a key is pressed: the game pieces (egg,
-'  diamond, mine, heart) travel clockwise around the screen edge, every
+'  star, mine, heart, pill) travel clockwise around the screen edge, every
 '  second piece is dark and they take turns blinking.  The logo cycles its
 '  colours.
 SUB SparklePause
-    CONST NB = 28                              'number of pieces (a divisor of 252, multiple of 4)
+    CONST NB = 28                              'number of pieces (an even divisor of 252)
     DIM oldP(1 TO NB)
+    DIM tune$(1 TO 20)
+    'the opening music (cheerful march, C major, 4 bars), played once, one note
+    'at a time so that it stops almost at once when a key is pressed
+    tune$(1) = "MBMNT160O3L8C"
+    tune$(2) = "MBMNT160O3L8D"
+    tune$(3) = "MBMNT160O3L8E"
+    tune$(4) = "MBMNT160O3L8G"
+    tune$(5) = "MBMNT160O4L4C"
+    tune$(6) = "MBMNT160O3L4G"
+    tune$(7) = "MBMNT160O3L8A"
+    tune$(8) = "MBMNT160O3L8G"
+    tune$(9) = "MBMNT160O3L8E"
+    tune$(10) = "MBMNT160O3L8D"
+    tune$(11) = "MBMNT160O3L4E"
+    tune$(12) = "MBMNT160O3L4C"
+    tune$(13) = "MBMNT160O3L4G"
+    tune$(14) = "MBMNT160O3L4F"
+    tune$(15) = "MBMNT160O3L4E"
+    tune$(16) = "MBMNT160O3L4D"
+    tune$(17) = "MBMNT160O3L4C"
+    tune$(18) = "MBMNT160O3L4E"
+    tune$(19) = "MBMNT160O3L4G"
+    tune$(20) = "MBMNT160O4L2C"
+    tp = 1
     ph = 0
     FOR i = 1 TO NB
         oldP(i) = -1
@@ -1270,11 +1299,12 @@ SUB SparklePause
         'draw them at their new places
         FOR i = 1 TO NB
             p = ((i - 1) * (252 \ NB) + ph) MOD 252
-            SELECT CASE (i - 1) MOD 4
+            SELECT CASE (i - 1) MOD 5
                 CASE 0: ch = eggChr: fc = 15
                 CASE 1: ch = 4: fc = 10
                 CASE 2: ch = MINECHAR: fc = 12
-                CASE ELSE: ch = 3: fc = 12
+                CASE 3: ch = 3: fc = 12
+                CASE ELSE: ch = 5: fc = 11
             END SELECT
             IF ((i + ph \ 2) AND 1) = 0 THEN fc = 8
             BorderPos p, r, c
@@ -1289,7 +1319,15 @@ SUB SparklePause
         END IF
         ph = ph + 1
         IF ph >= 1260 THEN ph = 0               'all cycles (5, 4, 252) fit into 1260
-        DelayMs 80
+        FOR sl = 1 TO 4                           'the music is checked every 20 ms
+            IF soundOn AND tp <= 20 THEN
+                IF PLAY(0) = 0 THEN
+                    PLAY tune$(tp)
+                    tp = tp + 1
+                END IF
+            END IF
+            DelayMs 20
+        NEXT sl
     LOOP WHILE INKEY$ = ""
 END SUB
 

@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 16
-'  2026-10-22
+'  Version 17
+'  2026-10-27
 '
 '  Written for QuickBASIC 4.5 (QB45), in two modules (NIBBLESD.BAS + NIBBLEUI.BAS).
 '  QB64-PE builds NIBBLESD_ALL.BAS, the same code merged into one file.
@@ -101,10 +101,14 @@ DECLARE SUB SaveConfig ()
 DECLARE SUB SaveHigh ()
 DECLARE SUB SetBlink (flag)
 DECLARE SUB ShowWait ()
+DECLARE SUB ShrinkSnake (a, n)
 DECLARE SUB Sfx (n)
 DECLARE SUB SpawnBonus ()
-DECLARE SUB SpawnHeart ()
+DECLARE SUB HeartSpawn ()
+DECLARE SUB PrepareHeart ()
+DECLARE SUB PutHeart (rr, cc, d)
 DECLARE SUB SpawnMine ()
+DECLARE SUB SpawnPill ()
 DECLARE SUB Tick ()
 
 '---- Constants ---------------------------------------------------------------
@@ -117,9 +121,11 @@ CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGGLYPH = 1        'character code redefined as a filled egg
-CONST VERSIONTXT = "VERSION 16"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 17"   'shown on the title screen
 CONST MAXLIVES = 9
 CONST MAXFIX = 8          'fixed mines per level (at most)
+CONST PILLCUT = 3         'segments a pill takes off the snake (one egg gives 3)
+CONST PILLPTS = 250       'points for a pill
 CONST STARTOVER = 1       'parameters of the Level SUB
 CONST SAMELEVEL = 2
 CONST NEXTLEVEL = 3
@@ -134,6 +140,8 @@ COMMON SHARED doorsOn, wallStone, endMode, bonOn, fxCount, heartOn
 COMMON SHARED heartDone, doorState, abortGame, victory, splitLevel
 COMMON SHARED prepWhat, spaceHit, pendingEsc, deferDraw
 COMMON SHARED eggChr, fxGone()
+COMMON SHARED pillOn, pillCnt
+COMMON SHARED dlgBg
 
 '---- Global variables of this module only ------------------------------------
 'The playfield is 80 x 50 "pixels": every text character holds two pixels
@@ -145,10 +153,14 @@ DIM SHARED eggRow(1 TO MAXEGG), eggCol(1 TO MAXEGG)
 DIM SHARED fxRow(1 TO MAXFIX), fxCol(1 TO MAXFIX)     'fixed mines
 DIM SHARED bfsD(0 TO 3999), bfsQ(0 TO 3999)        'path search (one entry per pixel)
 DIM SHARED glyphsOn
-DIM SHARED gCode(1 TO 4), gNew$(1 TO 4), gOld$(1 TO 4)
+DIM SHARED gCode(1 TO 5), gNew$(1 TO 5), gOld$(1 TO 5)
 DIM SHARED loopsPerMs AS SINGLE
 DIM SHARED bonRow, bonCol, bonTime, eggLeft, eggTotal
+DIM SHARED pillRow, pillCol, pillTime, pillWait, pillClr   'the pill (shortens the snake)
+DIM SHARED godMode, cheated                'hidden test switch (Ctrl+G) and its flag
 DIM SHARED heartRow, heartCol, heartTime, heartMax, tickCnt
+DIM SHARED hcN, hcRow(1 TO 4), hcCol(1 TO 4), hcRat(1 TO 4)   'heart places near the corners; hcRat = path / straight line (x16)
+DIM SHARED bfsFresh                        'TRUE while bfsD holds the result for the arena just built
 DIM SHARED doorTimer, doorRow                      'side doors
 DIM SHARED newHigh, anyDead, levelDone, stepMs
 DIM SHARED fileFail, fileBusy
@@ -252,6 +264,7 @@ SUB AddScore (a, pts)
         highScore = sammy(a).score
         hiName$ = nm$(a)
     END IF
+    bfsFresh = TRUE
 END SUB
 
 'AddToTable:
@@ -328,7 +341,7 @@ SUB Calibrate
 END SUB
 
 'CellBusy:
-'  TRUE if an item (egg, bonus, heart, mine) already sits on the text cell
+'  TRUE if an item (egg, bonus, heart, pill, mine) already sits on the text cell
 FUNCTION CellBusy (rr, cc)
     CellBusy = TRUE
     FOR e = 1 TO MAXEGG
@@ -339,6 +352,9 @@ FUNCTION CellBusy (rr, cc)
     END IF
     IF heartOn THEN
         IF heartRow = rr AND heartCol = cc THEN EXIT FUNCTION
+    END IF
+    IF pillOn THEN
+        IF pillRow = rr AND pillCol = cc THEN EXIT FUNCTION
     END IF
     FOR m = 1 TO MAXMINE
         IF minTime(m) > 0 THEN
@@ -644,12 +660,13 @@ SUB DrawHudCenter (eggFg)
 END SUB
 
 'DrawItems:
-'  Draws the eggs, the bonus star, the heart and the mines
+'  Draws the eggs, the bonus star, the pill, the heart and the mines
 SUB DrawItems
     FOR e = 1 TO MAXEGG
         IF eggRow(e) > 0 THEN PutChar eggRow(e), eggCol(e), eggChr, pal(9) + pal(4) * 16
     NEXT e
     IF bonOn THEN PutChar bonRow, bonCol, 4, pal(10) + pal(4) * 16
+    IF pillOn THEN PutChar pillRow, pillCol, 5, pillClr + pal(4) * 16
     IF heartOn THEN
         hc = 12
         PutChar heartRow, heartCol, 3, hc + pal(4) * 16
@@ -742,7 +759,7 @@ END SUB
 
 'GlyphData$:
 '  Shape (16 lines of 8 pixels) of special character number k:
-'  1 egg (character 1), 2 heart (3), 3 star (4), 4 mine (15)
+'  1 egg (character 1), 2 heart (3), 3 star (4), 4 mine (15), 5 pill (5)
 FUNCTION GlyphData$ (k)
     SELECT CASE k
         CASE 1
@@ -752,17 +769,20 @@ FUNCTION GlyphData$ (k)
             g$ = CHR$(0) + CHR$(0) + CHR$(102) + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(126)
             g$ = g$ + CHR$(126) + CHR$(60) + CHR$(60) + CHR$(24) + CHR$(0) + CHR$(0) + CHR$(0) + CHR$(0)
         CASE 3
-            g$ = CHR$(0) + CHR$(24) + CHR$(24) + CHR$(60) + CHR$(60) + CHR$(255) + CHR$(255) + CHR$(126)
-            g$ = g$ + CHR$(60) + CHR$(60) + CHR$(102) + CHR$(102) + CHR$(195) + CHR$(195) + CHR$(0) + CHR$(0)
+            g$ = CHR$(0) + CHR$(24) + CHR$(24) + CHR$(66) + CHR$(36) + CHR$(24) + CHR$(165) + CHR$(90)
+            g$ = g$ + CHR$(90) + CHR$(165) + CHR$(24) + CHR$(36) + CHR$(66) + CHR$(24) + CHR$(24) + CHR$(0)
+        CASE 5
+            g$ = CHR$(0) + CHR$(0) + CHR$(60) + CHR$(126) + CHR$(126) + CHR$(126) + CHR$(126) + CHR$(126)
+            g$ = g$ + CHR$(0) + CHR$(126) + CHR$(126) + CHR$(126) + CHR$(126) + CHR$(126) + CHR$(60) + CHR$(0)
         CASE ELSE
-            g$ = CHR$(0) + CHR$(24) + CHR$(24) + CHR$(153) + CHR$(126) + CHR$(126) + CHR$(255) + CHR$(255)
-            g$ = g$ + CHR$(255) + CHR$(255) + CHR$(126) + CHR$(126) + CHR$(153) + CHR$(24) + CHR$(24) + CHR$(0)
+            g$ = CHR$(0) + CHR$(0) + CHR$(3) + CHR$(4) + CHR$(8) + CHR$(8) + CHR$(60) + CHR$(126)
+            g$ = g$ + CHR$(223) + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(126) + CHR$(60) + CHR$(0) + CHR$(0)
     END SELECT
     GlyphData$ = g$
 END FUNCTION
 
 'ItemInRect:
-'  TRUE if an egg, bonus, heart or mine sits inside the text cell rectangle
+'  TRUE if an egg, bonus, heart, pill or mine sits inside the text cell rectangle
 FUNCTION ItemInRect (r1, c1, r2, c2)
     ItemInRect = TRUE
     FOR e = 1 TO eggTotal
@@ -773,6 +793,9 @@ FUNCTION ItemInRect (r1, c1, r2, c2)
     END IF
     IF heartOn THEN
         IF heartRow >= r1 AND heartRow <= r2 AND heartCol >= c1 AND heartCol <= c2 THEN EXIT FUNCTION
+    END IF
+    IF pillOn THEN
+        IF pillRow >= r1 AND pillRow <= r2 AND pillCol >= c1 AND pillCol <= c2 THEN EXIT FUNCTION
     END IF
     FOR m = 1 TO MAXMINE
         IF minTime(m) > 0 THEN
@@ -833,20 +856,20 @@ SUB LoadConfig
 END SUB
 
 'LoadGlyphs:
-'  Redefines the characters of the egg, heart, star and mine as filled
+'  Redefines the characters of the egg, heart, star, mine and pill as filled
 '  shapes (8 x 16 pixels).  Everything is read back; if the video card does
 '  not accept the new shapes the old ones are put back and the normal
 '  characters (hollow circle for the egg) stay in use.
 SUB LoadGlyphs
     IF vidSeg <> &HB800& THEN EXIT SUB
-    gCode(1) = EGGGLYPH: gCode(2) = 3: gCode(3) = 4: gCode(4) = 15
-    FOR k = 1 TO 4
+    gCode(1) = EGGGLYPH: gCode(2) = 3: gCode(3) = 4: gCode(4) = 15: gCode(5) = 5
+    FOR k = 1 TO 5
         gNew$(k) = GlyphData$(k)
     NEXT k
     ok = TRUE
     FontOpen
     DEF SEG = &HA000&
-    FOR k = 1 TO 4
+    FOR k = 1 TO 5
         ofs = gCode(k) * 32
         old$ = ""
         FOR i = 0 TO 15
@@ -861,7 +884,7 @@ SUB LoadGlyphs
         NEXT i
     NEXT k
     IF NOT ok THEN
-        FOR k = 1 TO 4
+        FOR k = 1 TO 5
             ofs = gCode(k) * 32
             FOR i = 0 TO 15
                 POKE ofs + i, ASC(MID$(gOld$(k), i + 1, 1))
@@ -1072,6 +1095,7 @@ SUB PlaceFixedMines
     FOR attempt = 1 TO 3
         IF deferDraw THEN PollWait
         fxCount = 0
+        bfsFresh = FALSE                          'the last path search may still count removed mines
         tries = 0
         DO WHILE fxCount < want AND tries < 200
             tries = tries + 1
@@ -1098,6 +1122,7 @@ SUB PlaceFixedMines
         IF EggsReachable THEN EXIT SUB
     NEXT attempt
     fxCount = 0
+    bfsFresh = FALSE
 END SUB
 
 'PlayNibbles:
@@ -1109,6 +1134,8 @@ SUB PlayNibbles
     rankOf(1) = 0
     rankOf(2) = 0
     tickCnt = 0
+    godMode = FALSE
+    cheated = FALSE
     FOR m = 1 TO MAXFIX
         fxGone(m) = FALSE
     NEXT m
@@ -1134,6 +1161,7 @@ SUB PlayNibbles
         DoorReset
 
         bonOn = FALSE
+        pillWait = 0
         hitMine(1) = FALSE
         hitMine(2) = FALSE
         anyDead = FALSE
@@ -1167,6 +1195,8 @@ SUB PlayNibbles
                 EraseSnake a
             NEXT a
             bonOn = FALSE
+            pillOn = FALSE
+            pillWait = 0
             heartOn = FALSE
             FOR m = 1 TO MAXMINE
                 minTime(m) = 0
@@ -1216,10 +1246,14 @@ SUB PlayNibbles
                 DrawHud
                 victory = TRUE
                 gameOver = TRUE
+                dlgBg = 2                             'dark green window
                 Dialog "ALL" + STR$(NUMLEVELS) + " LEVELS COMPLETE!", "Life bonus: 1000 per life", "Press SPACE"
+                dlgBg = 0
             ELSE
                 prepWhat = NEXTLEVEL                  'the next level is built behind the message
+                dlgBg = 2                             'dark green window
                 Dialog "LEVEL COMPLETE!", "Bonus +500 points", "Press SPACE"
+                dlgBg = 0
                 IF abortGame THEN EXIT DO
                 DrawHud
                 Dialog "L E V E L" + STR$(curLevel), "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to start"
@@ -1228,9 +1262,11 @@ SUB PlayNibbles
     LOOP UNTIL gameOver
 
     'enter the scores in the high score table
-    FOR a = 1 TO numPlayers
-        rankOf(a) = AddToTable(nm$(a), sammy(a).score, curLevel)
-    NEXT a
+    IF NOT cheated THEN
+        FOR a = 1 TO numPlayers
+            rankOf(a) = AddToTable(nm$(a), sammy(a).score, curLevel)
+        NEXT a
+    END IF
     newHigh = (rankOf(1) = 1 OR rankOf(2) = 1)
     IF rankOf(1) > 0 OR rankOf(2) > 0 THEN SaveHigh
     IF hsCount > 0 THEN
@@ -1248,6 +1284,85 @@ FUNCTION PointIsThere (row, col)
         PointIsThere = (arena(row, col) <> pal(4))
     END IF
 END FUNCTION
+
+'PrepareHeart:
+'  Called when the arena is ready.  Picks, near each of the four corners (at
+'  most 3 pixels away), the closest free place the snakes can reach.  The path
+'  length from the start to each place comes from the path search of the arena
+'  (done anyway for the eggs and mines; it is run again only if needed).
+'  Nothing else is calculated, so building the arena is not slower.
+SUB PrepareHeart
+    hcN = 0
+    IF splitLevel OR NOT bfsFresh THEN RunBfs FALSE
+    bfsFresh = FALSE
+    FOR k = 1 TO 4
+        SELECT CASE k
+            CASE 1: r0 = 3: c0 = 2: dr = 1: dc = 1
+            CASE 2: r0 = 3: c0 = 79: dr = 1: dc = -1
+            CASE 3: r0 = 24: c0 = 2: dr = -1: dc = 1
+            CASE ELSE: r0 = 24: c0 = 79: dr = -1: dc = -1
+        END SELECT
+        bestS = 99
+        br = 0
+        bc = 0
+        FOR i = 0 TO 1                        'text rows from the corner (2 pixels each)
+            FOR j = 0 TO 3                    'columns from the corner
+                rr = r0 + i * dr
+                cc = c0 + j * dc
+                s = j + i * 2
+                IF s < bestS THEN
+                    p = (rr * 2 - 2) * 80 + cc - 1
+                    IF bfsD(p) >= 0 AND bfsD(p + 80) >= 0 THEN
+                        IF NOT CellBusy(rr, cc) THEN
+                            bestS = s
+                            br = rr
+                            bc = cc
+                        END IF
+                    END IF
+                END IF
+            NEXT j
+        NEXT i
+        IF br > 0 THEN
+            hcN = hcN + 1
+            hcRow(hcN) = br
+            hcCol(hcN) = bc
+            p = (br * 2 - 2) * 80 + bc - 1
+            pl = bfsD(p)
+            IF bfsD(p + 80) < pl THEN pl = bfsD(p + 80)
+            mn = 32000
+            FOR a = 1 TO numPlayers
+                IF sammy(a).alive THEN
+                    dx = ABS(bc - sammy(a).col)
+                    dy = ABS(br * 2 - 1 - sammy(a).row)
+                    dy2 = ABS(br * 2 - sammy(a).row)
+                    IF dy2 < dy THEN dy = dy2
+                    IF dx + dy < mn THEN mn = dx + dy
+                END IF
+            NEXT a
+            IF mn < 1 THEN mn = 1
+            rt& = (pl * 16&) \ mn
+            IF rt& < 16 THEN rt& = 16
+            IF rt& > 160 THEN rt& = 160
+            hcRat(hcN) = rt&
+        END IF
+    NEXT k
+END SUB
+
+'PutHeart:
+'  Shows the heart at text cell (rr, cc); d = path length to it.  The time it
+'  stays is the path length plus a third plus 12 steps.
+SUB PutHeart (rr, cc, d)
+    heartRow = rr
+    heartCol = cc
+    heartMax = d + d \ 3 + 12
+    heartTime = heartMax
+    heartOn = TRUE
+    heartDone = TRUE
+    hc = 12
+    PutChar heartRow, heartCol, 3, hc + pal(4) * 16
+    Sfx 7
+END SUB
+
 
 'PollWait:
 '  Called while a level is built behind a message box: looks at the keys.
@@ -1315,6 +1430,12 @@ SUB ReadKeys
             CASE "p", "P"
                 Dialog "G A M E   P A U S E D", "", "Press SPACE to continue"
                 IF abortGame THEN EXIT DO
+            CASE CHR$(7)                             'Ctrl+G: hidden immortality switch (test only)
+                godMode = NOT godMode
+                IF godMode THEN cheated = TRUE
+                IF soundOn THEN
+                    IF godMode THEN PLAY "MBMNT255O4L64CEG" ELSE PLAY "MBMNT255O4L64GEC"
+                END IF
             CASE CHR$(27)
                 IF AskYesNo("Quit to the menu?") THEN
                     abortGame = TRUE
@@ -1359,7 +1480,7 @@ SUB RestoreGlyphs
     IF NOT glyphsOn THEN EXIT SUB
     FontOpen
     DEF SEG = &HA000&
-    FOR k = 1 TO 4
+    FOR k = 1 TO 5
         ofs = gCode(k) * 32
         FOR i = 0 TO 15
             POKE ofs + i, ASC(MID$(gOld$(k), i + 1, 1))
@@ -1485,17 +1606,33 @@ END SUB
 SUB Sfx (n)
     IF NOT soundOn THEN EXIT SUB
     SELECT CASE n
-        CASE 1: PLAY "MBMNT160O1>L20CDEDCDL10ECC"        'level start
-        CASE 2: PLAY "MBMNT160O0L16>CCCE"             'number eaten
-        CASE 3: PLAY "MBMNT160O0L32EFGEFDC"             'crash
+        CASE 1: PLAY "MBMNT140O3L8GL16GL8>C<L16GL4>E"        'level start (bugle call)
+        CASE 2: PLAY "MBMNT240O4L64CDEFGAB>L32C"          'number eaten (quick bubble run)
+        CASE 3: PLAY "MBMNT180O3>L32C<BA-GF+FEE-DC+C"        'crash (cartoon fall)
         CASE 4: PLAY "MBMNT160O2L16CEGO3CEGO4C"          'level complete
         CASE 5: PLAY "MBMNT200O3L32EGB>CL16E"            'bonus
-        CASE 6: PLAY "MBMNT200O1L32DC"                    'mine appears
         CASE 7: PLAY "MBMNT220O2L32GBGB"                  'heart appears
         CASE 8: PLAY "MBMNT180O3L16CEGB>CE"               'heart caught
         CASE 9: PLAY "MBMNT200O2L32CEC"                   'door warning
         CASE 10: PLAY "T255MSL64O1GFEDCO0BAGFEDCP64O2GFEDCO1BAGFEDC"   'mine explosion
+        CASE 11: PLAY "MBMNT190O3L32CDEFGAB>CL16EGL8>C"   'pill eaten (rising run, then a bright chord)
+        CASE 12: PLAY "MBMNT220O4L32EP32EP32>C"           'pill appears (short alert)
     END SELECT
+END SUB
+
+'ShrinkSnake:
+'  Takes n segments off the tail of snake a (never below the start length)
+SUB ShrinkSnake (a, n)
+    nl = sammy(a).length - n
+    IF nl < STARTLEN THEN nl = STARTLEN
+    tc = sammy(a).count - n
+    IF tc < STARTLEN THEN tc = STARTLEN
+    sammy(a).length = nl
+    DO WHILE sammy(a).count > tc
+        tl = (sammy(a).head - sammy(a).count + 1 + MAXSNAKELENGTH) MOD MAXSNAKELENGTH
+        PutPixel sammyBody(tl, a).row, sammyBody(tl, a).col, pal(4)
+        sammy(a).count = sammy(a).count - 1
+    LOOP
 END SUB
 
 'SpawnBonus:
@@ -1509,45 +1646,75 @@ SUB SpawnBonus
     PutChar bonRow, bonCol, 4, pal(10) + pal(4) * 16
 END SUB
 
-'SpawnHeart:
-'  Puts the heart on the reachable cell that is farthest (by real path
-'  length) from the snakes.  The time limit follows from that distance.
-SUB SpawnHeart
-    RunBfs FALSE
-
+'HeartSpawn:
+'  The heart appears at the prepared corner place that is farthest from the
+'  nearest snake (path length estimated from the straight line distance and
+'  the path / straight line ratio worked out when the arena was built).  If no
+'  corner place can be used, 40 random free places are tried.  Nothing here is
+'  slow, the heart is there at once.
+SUB HeartSpawn
     best = -1
-    bestR = 0
-    bestC = 0
-    FOR rr = 2 TO 25
-        FOR cc = 2 TO 79
-            d1 = bfsD((rr * 2 - 2) * 80 + cc - 1)
-            d2 = bfsD((rr * 2 - 1) * 80 + cc - 1)
-            IF d1 >= 0 AND d2 >= 0 THEN
-                dd = d1
-                IF d2 < dd THEN dd = d2
-                IF dd > best THEN
-                    IF NOT CellBusy(rr, cc) THEN
-                        best = dd
-                        bestR = rr
-                        bestC = cc
+    bk = 0
+    FOR k = 1 TO hcN
+        IF arena(hcRow(k) * 2 - 1, hcCol(k)) = pal(4) AND arena(hcRow(k) * 2, hcCol(k)) = pal(4) THEN
+            IF NOT CellBusy(hcRow(k), hcCol(k)) THEN
+                dmin = 32000
+                FOR a = 1 TO numPlayers
+                    IF sammy(a).alive THEN
+                        dx = ABS(hcCol(k) - sammy(a).col)
+                        dy = ABS(hcRow(k) * 2 - 1 - sammy(a).row)
+                        dy2 = ABS(hcRow(k) * 2 - sammy(a).row)
+                        IF dy2 < dy THEN dy = dy2
+                        est = ((dx + dy) * hcRat(k)) \ 16
+                        IF est < dmin THEN dmin = est
+                    END IF
+                NEXT a
+                IF dmin < 32000 AND dmin > best THEN
+                    best = dmin
+                    bk = k
+                END IF
+            END IF
+        END IF
+    NEXT k
+    IF bk > 0 AND best >= 6 THEN
+        PutHeart hcRow(bk), hcCol(bk), best
+        EXIT SUB
+    END IF
+
+    'no corner place: the farthest of 40 random free places that can be reached
+    best = -1
+    br = 0
+    bc = 0
+    FOR t = 1 TO 40
+        rr = 3 + INT(RND * 22)
+        cc = 2 + INT(RND * 78)
+        p = (rr * 2 - 2) * 80 + cc - 1
+        IF bfsD(p) >= 0 AND bfsD(p + 80) >= 0 THEN
+            IF arena(rr * 2 - 1, cc) = pal(4) AND arena(rr * 2, cc) = pal(4) THEN
+                IF NOT CellBusy(rr, cc) THEN
+                    dmin = 32000
+                    FOR a = 1 TO numPlayers
+                        IF sammy(a).alive THEN
+                            dx = ABS(cc - sammy(a).col)
+                            dy = ABS(rr * 2 - 1 - sammy(a).row)
+                            dy2 = ABS(rr * 2 - sammy(a).row)
+                            IF dy2 < dy THEN dy = dy2
+                            est = (dx + dy) + (dx + dy) \ 4
+                            IF est < dmin THEN dmin = est
+                        END IF
+                    NEXT a
+                    IF dmin < 32000 AND dmin > best THEN
+                        best = dmin
+                        br = rr
+                        bc = cc
                     END IF
                 END IF
             END IF
-        NEXT cc
-    NEXT rr
-
-    IF best >= 6 THEN
-        heartRow = bestR
-        heartCol = bestC
-        heartMax = best + best \ 3 + 12
-        heartTime = heartMax
-        heartOn = TRUE
-        heartDone = TRUE
-        hc = 12
-        PutChar heartRow, heartCol, 3, hc + pal(4) * 16
-        Sfx 7
-    END IF
+        END IF
+    NEXT t
+    IF br > 0 AND best >= 6 THEN PutHeart br, bc, best
 END SUB
+
 
 'SpawnMine:
 '  Puts a mine on a free spot that is not close to any snake head.  The
@@ -1578,10 +1745,24 @@ SUB SpawnMine
             minCol(slot) = c
             minTime(slot) = 12000 \ (stepMs + 10)
             PutChar r, c, MINECHAR, pal(15) + pal(4) * 16
-            Sfx 6
             EXIT SUB
         END IF
     NEXT attempt
+END SUB
+
+'SpawnPill:
+'  Puts a pill on a free spot (once per level, twice on levels with more than 20 eggs)
+SUB SpawnPill
+    FindCell r, c
+    pillRow = r
+    pillCol = c
+    pillClr = 11
+    IF pal(4) = 3 THEN pillClr = 13           'light cyan would vanish on cyan
+    pillOn = TRUE
+    pillCnt = pillCnt + 1
+    pillTime = 10000 \ (stepMs + 10)
+    PutChar pillRow, pillCol, 5, pillClr + pal(4) * 16
+    Sfx 12
 END SUB
 
 'Tick:
@@ -1600,6 +1781,22 @@ SUB Tick
         ELSEIF (bonTime AND 3) = 0 THEN
             IF (bonTime AND 4) = 0 THEN fc = pal(10) ELSE fc = pal(9)
             PutChar bonRow, bonCol, 4, fc + pal(4) * 16
+        END IF
+    END IF
+
+    'the pill: wait for its random moment, then it flashes like the star
+    IF pillWait > 0 THEN
+        pillWait = pillWait - 1
+        IF pillWait = 0 THEN SpawnPill
+    END IF
+    IF pillOn THEN
+        pillTime = pillTime - 1
+        IF pillTime <= 0 THEN
+            pillOn = FALSE
+            DrawCell pillRow, pillCol
+        ELSEIF (pillTime AND 3) = 0 THEN
+            IF (pillTime AND 4) = 0 THEN fc = pillClr ELSE fc = 15
+            PutChar pillRow, pillCol, 5, fc + pal(4) * 16
         END IF
     END IF
 
@@ -1666,7 +1863,7 @@ SUB Tick
         rr = (r + 1) \ 2
         FOR m = 1 TO MAXMINE
             IF minTime(m) > 0 THEN
-                IF minRow(m) = rr AND minCol(m) = c THEN
+                IF minRow(m) = rr AND minCol(m) = c AND NOT godMode THEN
                     dead = TRUE
                     hitMine(a) = TRUE
                     mineHitRow(a) = rr
@@ -1677,7 +1874,7 @@ SUB Tick
             END IF
         NEXT m
         FOR m = 1 TO fxCount
-            IF fxRow(m) = rr AND fxCol(m) = c THEN
+            IF fxRow(m) = rr AND fxCol(m) = c AND NOT godMode THEN
                 dead = TRUE
                 hitMine(a) = TRUE
                 mineHitRow(a) = rr
@@ -1686,8 +1883,15 @@ SUB Tick
         NEXT m
 
         IF dead THEN
-            sammy(a).alive = FALSE
-            anyDead = TRUE
+            IF godMode THEN
+                'immortal: the snake stays on its cell until the player turns
+                hd = sammy(a).head
+                sammy(a).row = sammyBody(hd, a).row
+                sammy(a).col = sammyBody(hd, a).col
+            ELSE
+                sammy(a).alive = FALSE
+                anyDead = TRUE
+            END IF
         ELSE
             'old head becomes body
             hd = sammy(a).head
@@ -1722,10 +1926,20 @@ SUB Tick
                         IF NOT bonOn THEN
                             IF INT(RND * 3) = 0 THEN SpawnBonus
                         END IF
+                        'the 1st pill comes 2 to 12 seconds after the 3rd egg; levels with more
+                        'than 20 eggs get a 2nd one after half of the eggs, once the 1st is gone
+                        pillMax = 1
+                        IF eggTotal > 20 THEN pillMax = 2
+                        IF pillCnt < pillMax AND pillWait = 0 AND NOT pillOn THEN
+                            IF pillCnt = 0 THEN need = 3 ELSE need = eggTotal \ 2
+                            IF eggTotal - eggLeft >= need THEN
+                                pillWait = 2000 \ (stepMs + 10) + INT(RND * (10000 \ (stepMs + 10))) + 1
+                            END IF
+                        END IF
                         IF mineMode = 2 OR mineMode = 4 THEN
                             IF INT(RND * 3) = 0 THEN SpawnMine
                         END IF
-                        IF eggLeft = 1 AND NOT heartDone THEN SpawnHeart
+                        IF eggLeft = 1 AND NOT heartDone THEN HeartSpawn
                     END IF
                     DrawHud
                     EXIT FOR
@@ -1744,6 +1958,15 @@ SUB Tick
                     heartOn = FALSE
                     IF sammy(a).lives < MAXLIVES THEN sammy(a).lives = sammy(a).lives + 1
                     Sfx 8
+                    DrawHud
+                END IF
+            END IF
+            IF pillOn THEN
+                IF pillRow = rr AND pillCol = c THEN
+                    pillOn = FALSE
+                    ShrinkSnake a, PILLCUT
+                    AddScore a, PILLPTS
+                    Sfx 11
                     DrawHud
                 END IF
             END IF
