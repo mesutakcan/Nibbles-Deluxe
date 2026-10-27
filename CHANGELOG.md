@@ -1,5 +1,8 @@
 ## Changelog
 
+Version 1 is the original QBasic `NIBBLES.BAS`, used as the starting point for this project.
+The changelog begins with Version 2, the first version developed here.
+
 ### Version 2 - 2026-10-08
 
 - Direct video memory graphics for fast, flicker-free drawing with exact colours
