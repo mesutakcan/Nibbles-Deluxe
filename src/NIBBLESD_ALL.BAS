@@ -1,13 +1,14 @@
 '===========================================================================
 '                     N I B B L E S   D E L U X E
 '
-'  NIBBLESD_ALL.BAS: NIBBLESD.BAS and NIBBLEUI.BAS merged into one file
-'  (the same code) for QB64-PE.  QB45 uses the two modules.
+'  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 17
-'  2026-10-27
+'  Version 18
+'  2026-10-28
 '
+'  NIBBLESD_ALL.BAS: the code of NIBBLESD.BAS and NIBBLEUI.BAS merged into one
+'  file, for QB64-PE.  (QuickBASIC 4.5 uses the two modules.)
 '  For detailed information, please refer to the README.md file.
 '===========================================================================
 
@@ -15,6 +16,7 @@
 DEFINT A-Z
 
 
+'---- Declarations shared by both modules (types, constants, COMMON SHARED) ----
 '---- User defined types ----------------------------------------------------
 TYPE snakeBody
     row AS INTEGER
@@ -34,48 +36,87 @@ TYPE snakeType
     alive AS INTEGER
 END TYPE
 
+'---- Constants used by both modules ------------------------------------------
+CONST TRUE = -1
+CONST FALSE = 0
+CONST STARTLEN = 5
+CONST NECKLEN = 2          'plain (unstriped) body parts right behind the head
+CONST NUMLEVELS = 25
+CONST MAXMINE = 3         'mines on the screen at the same time
+CONST MINECHAR = 15       'character used for a mine
+CONST MAXFIX = 8          'fixed mines per level (at most)
+CONST STARTOVER = 1       'parameters of the Level SUB
+CONST SAMELEVEL = 2
+CONST NEXTLEVEL = 3
+
+'---- Variables shared by both modules (DIM SHARED) -------------------------
+DIM SHARED hiName$
+DIM SHARED hsCount
+DIM SHARED vidSeg AS LONG, highScore AS LONG, curLevel, numPlayers
+DIM SHARED speedSet, speedUp, startLevel, theme, soundOn, mineMode
+DIM SHARED doorsOn, wallStone, endMode, bonOn, fxCount, heartOn
+DIM SHARED heartDone, doorState, abortGame, victory, splitLevel
+DIM SHARED prepWhat, spaceHit, pendingEsc, deferDraw
+DIM SHARED eggChr
+DIM SHARED pillOn, pillCnt
+DIM SHARED dlgBg
+
 '---- Sub declarations --------------------------------------------------------
 DECLARE FUNCTION AddToTable (n$, sc&, lv)
 DECLARE FUNCTION AskYesNo (msg$)
+DECLARE FUNCTION BannerRow$ (i)
 DECLARE FUNCTION BodyColor (a, idx)
 DECLARE FUNCTION CellBusy (rr, cc)
 DECLARE FUNCTION CleanName$ (n$, dflt$)
 DECLARE FUNCTION DoorFree (mask)
 DECLARE FUNCTION DoorPass (row)
 DECLARE FUNCTION DoorTicks (ms)
+DECLARE FUNCTION DoorWaitMs ()
 DECLARE FUNCTION EggsReachable ()
-DECLARE FUNCTION MineSpotOk (r, c)
-DECLARE FUNCTION TryChooseDoor ()
-DECLARE FUNCTION WallColor (row, col)
 DECLARE FUNCTION GameOverScreen ()
 DECLARE FUNCTION GlyphData$ (k)
 DECLARE FUNCTION IsWallColor (c)
 DECLARE FUNCTION ItemInRect (r1, c1, r2, c2)
 DECLARE FUNCTION MainMenu ()
+DECLARE FUNCTION MineSpotOk (r, c)
 DECLARE FUNCTION Num7$ (v&)
 DECLARE FUNCTION PointIsThere (row, col)
+DECLARE FUNCTION TryChooseDoor ()
+DECLARE FUNCTION WallColor (row, col)
 DECLARE SUB AddScore (a, pts)
 DECLARE SUB ApplyTheme ()
 DECLARE SUB BlinkHud ()
+DECLARE SUB BorderPos (u, r, c)
 DECLARE SUB Calibrate ()
 DECLARE SUB Center (row, text$, attr)
+DECLARE SUB ChangeSetting (sel, d)
 DECLARE SUB ClearScreen (attr)
 DECLARE SUB DeathAnim (a, variant)
 DECLARE SUB DelayMs (ms)
+DECLARE SUB Dialog (t1$, t2$, hint$)
 DECLARE SUB DoorBlink (kind, flag)
 DECLARE SUB DoorReset ()
 DECLARE SUB DoorSet (k, wallFlag)
 DECLARE SUB DoorTick ()
-DECLARE SUB Dialog (t1$, t2$, hint$)
+DECLARE SUB DrawBanner (row, phase, withShadow)
+DECLARE SUB DrawBox (r1, c1, r2, c2, attr)
 DECLARE SUB DrawCell (r, c)
 DECLARE SUB DrawHud ()
 DECLARE SUB DrawHudCenter (eggFg)
 DECLARE SUB DrawItems ()
+DECLARE SUB DrawMenu (sel)
+DECLARE SUB DrawMenuFrame ()
+DECLARE SUB DrawMenuHint ()
+DECLARE SUB DrawMenuRow (i, sel)
+DECLARE SUB DrawTable (r0, hl1, hl2, baseAttr, hlAttr)
+DECLARE SUB EditName (who)
 DECLARE SUB EraseSnake (a)
 DECLARE SUB FillRect (r1, c1, r2, c2, ch, attr)
 DECLARE SUB FindCell (rr, cc)
+DECLARE SUB FixEggs ()
 DECLARE SUB FontClose ()
 DECLARE SUB FontOpen ()
+DECLARE SUB HeartSpawn ()
 DECLARE SUB Intro ()
 DECLARE SUB Level (what)
 DECLARE SUB LoadConfig ()
@@ -85,70 +126,39 @@ DECLARE SUB MineBoom (rr, cc)
 DECLARE SUB PlaceEggs ()
 DECLARE SUB PlaceFixedMines ()
 DECLARE SUB PlayNibbles ()
+DECLARE SUB PollWait ()
+DECLARE SUB PrepareHeart ()
 DECLARE SUB PutChar (row, col, ch, attr)
+DECLARE SUB PutHeart (rr, cc, d)
 DECLARE SUB PutPixel (row, col, c)
 DECLARE SUB PutStr (row, col, s$, attr)
 DECLARE SUB QueueTurn (who, d)
 DECLARE SUB ReadKeys ()
 DECLARE SUB RedrawRows (r1, r2)
-DECLARE SUB RunBfs (useDoors)
-DECLARE SUB FixEggs ()
-DECLARE FUNCTION DoorWaitMs ()
-DECLARE SUB PollWait ()
 DECLARE SUB RestoreGlyphs ()
+DECLARE SUB RunBfs (useDoors)
 DECLARE SUB SaveConfig ()
 DECLARE SUB SaveHigh ()
 DECLARE SUB SetBlink (flag)
+DECLARE SUB Sfx (n)
+DECLARE SUB ShowScores ()
 DECLARE SUB ShowWait ()
 DECLARE SUB ShrinkSnake (a, n)
-DECLARE SUB Sfx (n)
+DECLARE SUB SparklePause ()
 DECLARE SUB SpawnBonus ()
-DECLARE SUB HeartSpawn ()
-DECLARE SUB PrepareHeart ()
-DECLARE SUB PutHeart (rr, cc, d)
 DECLARE SUB SpawnMine ()
 DECLARE SUB SpawnPill ()
 DECLARE SUB Tick ()
-DECLARE FUNCTION BannerRow$ (i)
-DECLARE SUB BorderPos (u, r, c)
-DECLARE SUB ChangeSetting (sel, d)
-DECLARE SUB DrawBanner (row, phase, withShadow)
-DECLARE SUB DrawBox (r1, c1, r2, c2, attr)
-DECLARE SUB DrawTable (r0, hl1, hl2, baseAttr, hlAttr)
-DECLARE SUB DrawMenu (sel)
-DECLARE SUB DrawMenuFrame ()
-DECLARE SUB DrawMenuRow (i, sel)
-DECLARE SUB DrawMenuHint ()
-DECLARE SUB EditName (who)
-DECLARE SUB ShowScores ()
-DECLARE SUB SparklePause ()
 DECLARE SUB Wall (row, col)
 
-'---- Constants ---------------------------------------------------------------
-CONST TRUE = -1
-CONST FALSE = 0
+'---- Constants used in this module only --------------------------------------
 CONST MAXSNAKELENGTH = 1000
-CONST STARTLEN = 5
-CONST NUMLEVELS = 25
-CONST MAXMINE = 3         'mines on the screen at the same time
-CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGGLYPH = 1        'character code redefined as a filled egg
-CONST VERSIONTXT = "VERSION 17"   'shown on the title screen
 CONST MAXLIVES = 9
-CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST PILLCUT = 3         'segments a pill takes off the snake (one egg gives 3)
 CONST PILLPTS = 250       'points for a pill
-CONST STARTOVER = 1       'parameters of the Level SUB
-CONST SAMELEVEL = 2
-CONST NEXTLEVEL = 3
-
-'---- Variables shared by both modules (in the two-module version: COMMON SHARED) ----
-DIM SHARED hiName$, hsCount, vidSeg AS LONG, highScore AS LONG, curLevel
-DIM SHARED numPlayers, speedSet, speedUp, startLevel, theme, soundOn
-DIM SHARED mineMode, doorsOn, wallStone, endMode, bonOn, fxCount, heartOn
-DIM SHARED heartDone, doorState, abortGame, victory, splitLevel, prepWhat
-DIM SHARED spaceHit, pendingEsc, deferDraw, eggChr, pillOn, pillCnt, dlgBg
+CONST VERSIONTXT = "VERSION 18"   'shown on the title screen
 
 '---- Global variables of this module only ------------------------------------
 'The playfield is 80 x 50 "pixels": every text character holds two pixels
@@ -397,6 +407,8 @@ SUB DeathAnim (a, variant)
             idx = (sammy(a).head - k + MAXSNAKELENGTH) MOD MAXSNAKELENGTH
             IF k = 0 THEN
                 px = pal(6 + a)
+            ELSEIF k <= NECKLEN THEN
+                px = pal(12 + a)                      'the neck: dark, no stripes
             ELSEIF idx AND 1 THEN
                 px = pal(a)
             ELSE
@@ -957,8 +969,9 @@ END SUB
 '  Explosion on the text cell (rr, cc) where a snake hit a mine: a short
 '  flash in the cell and 16 sparks that fly out in all directions, slow
 '  down and change colour (white, yellow, red, dark red, grey).  Every
-'  spark is one pixel (half block).  Only the screen is changed, not
-'  arena(); the playfield is redrawn at the end.  The sound is played in
+'  spark is a text character that gets smaller as it cools down: * then +
+'  then a small dot.  Only the screen is changed, not arena(); the
+'  playfield is redrawn at the end.  The sound is played in
 '  the background, so the timing is the same with and without sound.
 SUB MineBoom (rr, cc)
     CONST NP = 16
@@ -1009,6 +1022,13 @@ SUB MineBoom (rr, cc)
             CASE ELSE: pc = 8
         END SELECT
 
+        'character of this frame: the sparks get smaller as they cool down
+        SELECT CASE f
+            CASE 0 TO 2: sch = 42                   '*
+            CASE 3 TO 6: sch = 43                   '+
+            CASE ELSE: sch = 250                    'small dot
+        END SELECT
+
         'move and draw the sparks
         FOR i = 1 TO NP
             x(i) = x(i) + vx(i)
@@ -1018,11 +1038,8 @@ SUB MineBoom (rr, cc)
             px = INT(x(i) + .5)
             py = INT(y(i) + .5)
             IF px >= 1 AND px <= 80 AND py >= 3 AND py <= 50 THEN
-                oldc = arena(py, px)
-                arena(py, px) = pc
                 rw = (py + 1) \ 2
-                DrawCell rw, px
-                arena(py, px) = oldc
+                PutChar rw, px, sch, pc + pal(4) * 16
                 ox(i) = px
                 oy(i) = py
             END IF
@@ -1156,7 +1173,7 @@ SUB PlayNibbles
     Level STARTOVER
     DrawHud
     Dialog "L E V E L" + STR$(curLevel), "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to start"
-    Sfx 1
+    IF NOT abortGame THEN Sfx 1                  'no round start sound when quitting to the menu
 
     gameOver = FALSE
     DO
@@ -1900,9 +1917,13 @@ SUB Tick
                 anyDead = TRUE
             END IF
         ELSE
-            'old head becomes body
+            'old head becomes body: the parts right behind the head are dark and plain
             hd = sammy(a).head
-            PutPixel sammyBody(hd, a).row, sammyBody(hd, a).col, BodyColor(a, hd)
+            PutPixel sammyBody(hd, a).row, sammyBody(hd, a).col, pal(12 + a)
+            IF sammy(a).count > NECKLEN THEN
+                nk = (hd - NECKLEN + MAXSNAKELENGTH) MOD MAXSNAKELENGTH
+                PutPixel sammyBody(nk, a).row, sammyBody(nk, a).col, BodyColor(a, nk)
+            END IF
             'new head
             hd = (hd + 1) MOD MAXSNAKELENGTH
             sammy(a).head = hd
@@ -2006,6 +2027,7 @@ FUNCTION TryChooseDoor
         END IF
     NEXT attempt
 END FUNCTION
+
 
 'ApplyTheme:
 '  Fills the colour table.  Entries:
@@ -2997,7 +3019,13 @@ SUB Level (what)
             j = STARTLEN - 1 - back
             sammyBody(j, a).row = sr
             sammyBody(j, a).col = sc
-            IF back = 0 THEN arena(sr, sc) = pal(6 + a) ELSE arena(sr, sc) = BodyColor(a, j)
+            IF back = 0 THEN
+                arena(sr, sc) = pal(6 + a)
+            ELSEIF back <= NECKLEN THEN
+                arena(sr, sc) = pal(12 + a)           'the neck: dark, no stripes
+            ELSE
+                arena(sr, sc) = BodyColor(a, j)
+            END IF
             nseg = nseg + 1
         NEXT back
         sammy(a).head = STARTLEN - 1

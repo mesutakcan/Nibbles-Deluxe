@@ -19,7 +19,8 @@ The game runs in DOS / DOSBox (compiled with QuickBASIC 4.5), and also natively 
 
 The game is published version by version; every version has its own release. The BASIC source
 consists of two modules for QuickBASIC 4.5, always called `NIBBLESD.BAS` (the main module) and
-`NIBBLEUI.BAS`, and of `NIBBLESD_ALL.BAS`, the same code in one file for QB64-PE.
+`NIBBLEUI.BAS`, which share the declarations in the include file `NIBBLES.BI`, and of
+`NIBBLESD_ALL.BAS`, the same code in one file for QB64-PE.
 
 ## Features
 
@@ -39,10 +40,12 @@ consists of two modules for QuickBASIC 4.5, always called `NIBBLESD.BAS` (the ma
 - A pill that makes the snake shorter appears once per level (twice on the levels with more than
   20 eggs); it flashes like the bonus star and gives 250 points
 - Bright snake heads; the snakes are visible before a round starts
-- Two-tone striped snake bodies
+- Two-tone striped snake bodies, with a plain dark neck right behind the bright head, so the head
+  is easy to tell from the tail
 - Red mines: random mines pop up during play, fixed mines are placed when a level starts
   (the game checks that every egg stays reachable); mode OFF / RANDOM / FIXED / BOTH
-- A snake that hits a mine blows up: a flash and a shower of flying sparks with an explosion sound
+- A snake that hits a mine blows up: a flash and a shower of flying sparks (`*`, `+` and a small dot, getting smaller as they
+  cool down) with an explosion sound
 - Three death animations, chosen at random
 - The egg counter in the status line blinks when only 1 or 2 eggs are left
 - Side doors: now and then the walls open on both sides; go through one and come out on the other side
@@ -80,8 +83,8 @@ systems. Windows may show a SmartScreen warning for a program that is downloaded
 internet and is not signed; the source code of the game is in the [`src`](src) folder, and you
 can compile it yourself (see below).
 
-The BASIC source (`NIBBLESD.BAS`, `NIBBLEUI.BAS` and `NIBBLESD_ALL.BAS`) is in the [`src`](src)
-folder.
+The BASIC source (`NIBBLESD.BAS`, `NIBBLEUI.BAS`, `NIBBLES.BI` and `NIBBLESD_ALL.BAS`) is in the
+[`src`](src) folder.
 
 ## Requirements
 
@@ -114,7 +117,8 @@ a folder that is write-protected.
 
 **The source in QB45**
 
-1. Copy `src/NIBBLESD.BAS` and `src/NIBBLEUI.BAS` to your QB45 folder.
+1. Copy `src/NIBBLESD.BAS`, `src/NIBBLEUI.BAS` and `src/NIBBLES.BI` to your QB45 folder (the
+   include file has to be in the same folder as the two modules).
 2. Start QB45 and open `NIBBLESD.BAS`, then load the second module with **File > Load File...**
    (`NIBBLEUI.BAS`). `NIBBLESD.BAS` has to be the main module.
 3. Press **F5** to run the game.
@@ -275,6 +279,7 @@ an earlier version (a single score) can still be read.
 | --- | --- |
 | `NIBBLESD.BAS` | QuickBASIC 4.5, main module: game logic, sound, file access (settings and high scores) |
 | `NIBBLEUI.BAS` | QuickBASIC 4.5, second module: screens, menus, drawing helpers and the 25 level layouts |
+| `NIBBLES.BI` | QuickBASIC 4.5, include file: the user defined types, the constants and the `COMMON SHARED` variables that both modules use |
 | `NIBBLESD_ALL.BAS` | QB64-PE: the code of both modules merged into one file |
 
 **Why two modules for QuickBASIC 4.5?** The only reason is memory. Compiled as a single file,
@@ -283,13 +288,16 @@ the game is too big for the QuickBASIC 4.5 compiler: `BC.EXE` stops with the err
 happens even with plenty of free DOS memory, because the compiler's own internal tables overflow,
 not the memory of the machine (QuickBASIC 7.1 compiles the single file without problems). So the
 source is split into two modules that are compiled separately and then linked. Both modules
-declare the variables they share with identical `COMMON SHARED` blocks, and both are needed to
-run or build the game.
+take the declarations they share (the types, the constants and the `COMMON SHARED` variables)
+from the include file `NIBBLES.BI` with `$INCLUDE`, so these are written only once; the include
+file has to be in the same folder as the modules, and all three files are needed to run or build
+the game. The QB45 editor reads `NIBBLES.BI` when a module is loaded, so after you change it,
+load the modules again.
 
 **Why one merged file for QB64-PE?** QB64-PE builds a program from a single source file; it has
 no way to link separate modules, and it has no memory problem with the big file.
-`NIBBLESD_ALL.BAS` is the same code as the two modules, put into one file (the `COMMON SHARED`
-lines became `DIM SHARED`). QB64-PE always compiles the program, so the file is compiled to an
+`NIBBLESD_ALL.BAS` is the same code as the two modules, put into one file (the content of `NIBBLES.BI` is part
+of it, and the `COMMON SHARED` lines became `DIM SHARED`). QB64-PE always compiles the program, so the file is compiled to an
 EXE file (see **Building the EXE**) or built and started from the editor. `NIBBLESD.BAS` alone
 does not work in QB64-PE. If you change the game, change both versions.
 
@@ -336,7 +344,8 @@ LINK /EX NIBBLESD.OBJ+NIBBLEUI.OBJ,NIBBLESD.EXE,NUL,BCOM45.LIB;
 `/E` and `/X` support `ON ERROR` and `RESUME` (only `NIBBLESD.BAS` needs them), `/O` makes a
 stand-alone program, `/T` suppresses warning messages, `/C:512` sets the communications buffer
 size, the `+` in the `LINK` line joins the two modules, and `LINK /EX` packs the EXE file. Run the
-commands in the folder that holds both `.BAS` files and `BCOM45.LIB` (or give full paths).
+commands in the folder that holds both `.BAS` files, `NIBBLES.BI` and `BCOM45.LIB` (or give
+full paths). If you change `NIBBLES.BI`, compile both modules again.
 
 In DOSBox you can start the same commands from the `mount`ed QB45 folder, for example
 `C:\QB45\BC.EXE C:\QB45\NIBBLES\SRC\NIBBLESD.BAS/E/X/O/T/C:512;` and

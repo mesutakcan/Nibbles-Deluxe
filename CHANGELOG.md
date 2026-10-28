@@ -177,3 +177,16 @@ The changelog begins with Version 2, the first version developed here.
   the arena" message
 - The source is checked in a code review: a path search result that still counted removed fixed
   mines is no longer reused
+
+### Version 18 - 2026-10-28
+
+- The two parts right behind a snake's head are drawn in a plain dark colour without stripes, so
+  the bright head is easy to tell from the tail
+- The sparks of a mine explosion are now characters (`*`, then `+`, then a small dot) that get
+  smaller as they cool down
+- The round start sound is no longer played when you quit to the menu from the message box before
+  the round has started
+- The declarations that both modules share (the user defined types, the constants and the
+  `COMMON SHARED` variables) are now in one include file, `NIBBLES.BI`, which has to be in the
+  same folder as `NIBBLESD.BAS` and `NIBBLEUI.BAS`; `NIBBLESD_ALL.BAS` for QB64-PE contains the
+  same code merged into one file

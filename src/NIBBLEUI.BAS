@@ -5,8 +5,8 @@
 '  level layouts.  The main module is NIBBLESD.BAS.
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 17
-'  2026-10-27
+'  Version 18
+'  2026-10-28
 '
 '  Build: both modules are compiled with BC and linked together.
 '  For detailed information, please refer to the README.md file.
@@ -16,24 +16,8 @@
 DEFINT A-Z
 
 
-'---- User defined types ----------------------------------------------------
-TYPE snakeBody
-    row AS INTEGER
-    col AS INTEGER
-END TYPE
-
-TYPE snakeType
-    head AS INTEGER        'ring buffer index of the newest segment
-    count AS INTEGER       'number of segments drawn on the screen
-    length AS INTEGER      'wanted length of the snake
-    row AS INTEGER
-    col AS INTEGER
-    direction AS INTEGER   '1=up 2=down 3=left 4=right
-    lastDir AS INTEGER     'direction of the last real move
-    lives AS INTEGER
-    score AS LONG
-    alive AS INTEGER
-END TYPE
+'---- Declarations shared by both modules (types, constants, COMMON SHARED) ----
+'$INCLUDE: 'NIBBLES.BI'
 
 '---- Sub declarations --------------------------------------------------------
 DECLARE FUNCTION AskYesNo (msg$)
@@ -79,35 +63,8 @@ DECLARE SUB ShowWait ()
 DECLARE SUB SparklePause ()
 DECLARE SUB Wall (row, col)
 
-'---- Constants ---------------------------------------------------------------
-CONST TRUE = -1
-CONST FALSE = 0
-CONST MAXSNAKELENGTH = 1000
-CONST STARTLEN = 5
-CONST NUMLEVELS = 25
-CONST MAXMINE = 3         'mines on the screen at the same time
-CONST MINECHAR = 15       'character used for a mine
-CONST MAXEGG = 30         'eggs per level (at most)
-CONST EGGGLYPH = 1        'character code redefined as a filled egg
-CONST VERSIONTXT = "VERSION 17"   'shown on the title screen
-CONST MAXLIVES = 9
-CONST MAXFIX = 8          'fixed mines per level (at most)
-CONST STARTOVER = 1       'parameters of the Level SUB
-CONST SAMELEVEL = 2
-CONST NEXTLEVEL = 3
-
-'---- Variables shared by both modules (COMMON SHARED; keep identical in both) ----
-COMMON SHARED arena(), sammy() AS snakeType, sammyBody() AS snakeBody
-COMMON SHARED qn(), pal(), minTime(), hiName$, lvOrder(), hsName$()
-COMMON SHARED hsLevel(), hsCount, rankOf(), hsScore() AS LONG, nm$()
-COMMON SHARED vidSeg AS LONG, highScore AS LONG, curLevel, numPlayers
-COMMON SHARED speedSet, speedUp, startLevel, theme, soundOn, mineMode
-COMMON SHARED doorsOn, wallStone, endMode, bonOn, fxCount, heartOn
-COMMON SHARED heartDone, doorState, abortGame, victory, splitLevel
-COMMON SHARED prepWhat, spaceHit, pendingEsc, deferDraw
-COMMON SHARED eggChr, fxGone()
-COMMON SHARED pillOn, pillCnt
-COMMON SHARED dlgBg
+'---- Constants used in this module only --------------------------------------
+CONST VERSIONTXT = "VERSION 18"   'shown on the title screen
 
 'ApplyTheme:
 '  Fills the colour table.  Entries:
@@ -1099,7 +1056,13 @@ SUB Level (what)
             j = STARTLEN - 1 - back
             sammyBody(j, a).row = sr
             sammyBody(j, a).col = sc
-            IF back = 0 THEN arena(sr, sc) = pal(6 + a) ELSE arena(sr, sc) = BodyColor(a, j)
+            IF back = 0 THEN
+                arena(sr, sc) = pal(6 + a)
+            ELSEIF back <= NECKLEN THEN
+                arena(sr, sc) = pal(12 + a)           'the neck: dark, no stripes
+            ELSE
+                arena(sr, sc) = BodyColor(a, j)
+            END IF
             nseg = nseg + 1
         NEXT back
         sammy(a).head = STARTLEN - 1

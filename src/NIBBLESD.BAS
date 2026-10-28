@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 17
-'  2026-10-27
+'  Version 18
+'  2026-10-28
 '
 '  Written for QuickBASIC 4.5 (QB45), in two modules (NIBBLESD.BAS + NIBBLEUI.BAS).
 '  QB64-PE builds NIBBLESD_ALL.BAS, the same code merged into one file.
@@ -16,24 +16,8 @@
 DEFINT A-Z
 
 
-'---- User defined types ----------------------------------------------------
-TYPE snakeBody
-    row AS INTEGER
-    col AS INTEGER
-END TYPE
-
-TYPE snakeType
-    head AS INTEGER        'ring buffer index of the newest segment
-    count AS INTEGER       'number of segments drawn on the screen
-    length AS INTEGER      'wanted length of the snake
-    row AS INTEGER
-    col AS INTEGER
-    direction AS INTEGER   '1=up 2=down 3=left 4=right
-    lastDir AS INTEGER     'direction of the last real move
-    lives AS INTEGER
-    score AS LONG
-    alive AS INTEGER
-END TYPE
+'---- Declarations shared by both modules (types, constants, COMMON SHARED) ----
+'$INCLUDE: 'NIBBLES.BI'
 
 '---- Sub declarations --------------------------------------------------------
 DECLARE FUNCTION AddToTable (n$, sc&, lv)
@@ -111,37 +95,13 @@ DECLARE SUB SpawnMine ()
 DECLARE SUB SpawnPill ()
 DECLARE SUB Tick ()
 
-'---- Constants ---------------------------------------------------------------
-CONST TRUE = -1
-CONST FALSE = 0
+'---- Constants used in this module only --------------------------------------
 CONST MAXSNAKELENGTH = 1000
-CONST STARTLEN = 5
-CONST NUMLEVELS = 25
-CONST MAXMINE = 3         'mines on the screen at the same time
-CONST MINECHAR = 15       'character used for a mine
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGGLYPH = 1        'character code redefined as a filled egg
-CONST VERSIONTXT = "VERSION 17"   'shown on the title screen
 CONST MAXLIVES = 9
-CONST MAXFIX = 8          'fixed mines per level (at most)
 CONST PILLCUT = 3         'segments a pill takes off the snake (one egg gives 3)
 CONST PILLPTS = 250       'points for a pill
-CONST STARTOVER = 1       'parameters of the Level SUB
-CONST SAMELEVEL = 2
-CONST NEXTLEVEL = 3
-
-'---- Variables shared by both modules (COMMON SHARED; keep identical in both) ----
-COMMON SHARED arena(), sammy() AS snakeType, sammyBody() AS snakeBody
-COMMON SHARED qn(), pal(), minTime(), hiName$, lvOrder(), hsName$()
-COMMON SHARED hsLevel(), hsCount, rankOf(), hsScore() AS LONG, nm$()
-COMMON SHARED vidSeg AS LONG, highScore AS LONG, curLevel, numPlayers
-COMMON SHARED speedSet, speedUp, startLevel, theme, soundOn, mineMode
-COMMON SHARED doorsOn, wallStone, endMode, bonOn, fxCount, heartOn
-COMMON SHARED heartDone, doorState, abortGame, victory, splitLevel
-COMMON SHARED prepWhat, spaceHit, pendingEsc, deferDraw
-COMMON SHARED eggChr, fxGone()
-COMMON SHARED pillOn, pillCnt
-COMMON SHARED dlgBg
 
 '---- Global variables of this module only ------------------------------------
 'The playfield is 80 x 50 "pixels": every text character holds two pixels
@@ -390,6 +350,8 @@ SUB DeathAnim (a, variant)
             idx = (sammy(a).head - k + MAXSNAKELENGTH) MOD MAXSNAKELENGTH
             IF k = 0 THEN
                 px = pal(6 + a)
+            ELSEIF k <= NECKLEN THEN
+                px = pal(12 + a)                      'the neck: dark, no stripes
             ELSEIF idx AND 1 THEN
                 px = pal(a)
             ELSE
@@ -950,8 +912,9 @@ END SUB
 '  Explosion on the text cell (rr, cc) where a snake hit a mine: a short
 '  flash in the cell and 16 sparks that fly out in all directions, slow
 '  down and change colour (white, yellow, red, dark red, grey).  Every
-'  spark is one pixel (half block).  Only the screen is changed, not
-'  arena(); the playfield is redrawn at the end.  The sound is played in
+'  spark is a text character that gets smaller as it cools down: * then +
+'  then a small dot.  Only the screen is changed, not arena(); the
+'  playfield is redrawn at the end.  The sound is played in
 '  the background, so the timing is the same with and without sound.
 SUB MineBoom (rr, cc)
     CONST NP = 16
@@ -1002,6 +965,13 @@ SUB MineBoom (rr, cc)
             CASE ELSE: pc = 8
         END SELECT
 
+        'character of this frame: the sparks get smaller as they cool down
+        SELECT CASE f
+            CASE 0 TO 2: sch = 42                   '*
+            CASE 3 TO 6: sch = 43                   '+
+            CASE ELSE: sch = 250                    'small dot
+        END SELECT
+
         'move and draw the sparks
         FOR i = 1 TO NP
             x(i) = x(i) + vx(i)
@@ -1011,11 +981,8 @@ SUB MineBoom (rr, cc)
             px = INT(x(i) + .5)
             py = INT(y(i) + .5)
             IF px >= 1 AND px <= 80 AND py >= 3 AND py <= 50 THEN
-                oldc = arena(py, px)
-                arena(py, px) = pc
                 rw = (py + 1) \ 2
-                DrawCell rw, px
-                arena(py, px) = oldc
+                PutChar rw, px, sch, pc + pal(4) * 16
                 ox(i) = px
                 oy(i) = py
             END IF
@@ -1149,7 +1116,7 @@ SUB PlayNibbles
     Level STARTOVER
     DrawHud
     Dialog "L E V E L" + STR$(curLevel), "Collect" + STR$(eggTotal) + " eggs", "Press SPACE to start"
-    Sfx 1
+    IF NOT abortGame THEN Sfx 1                  'no round start sound when quitting to the menu
 
     gameOver = FALSE
     DO
@@ -1893,9 +1860,13 @@ SUB Tick
                 anyDead = TRUE
             END IF
         ELSE
-            'old head becomes body
+            'old head becomes body: the parts right behind the head are dark and plain
             hd = sammy(a).head
-            PutPixel sammyBody(hd, a).row, sammyBody(hd, a).col, BodyColor(a, hd)
+            PutPixel sammyBody(hd, a).row, sammyBody(hd, a).col, pal(12 + a)
+            IF sammy(a).count > NECKLEN THEN
+                nk = (hd - NECKLEN + MAXSNAKELENGTH) MOD MAXSNAKELENGTH
+                PutPixel sammyBody(nk, a).row, sammyBody(nk, a).col, BodyColor(a, nk)
+            END IF
             'new head
             hd = (hd + 1) MOD MAXSNAKELENGTH
             sammy(a).head = hd
