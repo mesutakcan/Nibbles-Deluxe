@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 18
-'  2026-10-28
+'  Version 19
+'  2026-11-01
 '
 '  Written for QuickBASIC 4.5 (QB45), in two modules (NIBBLESD.BAS + NIBBLEUI.BAS).
 '  QB64-PE builds NIBBLESD_ALL.BAS, the same code merged into one file.
@@ -27,6 +27,7 @@ DECLARE FUNCTION CellBusy (rr, cc)
 DECLARE FUNCTION CleanName$ (n$, dflt$)
 DECLARE FUNCTION DoorFree (mask)
 DECLARE FUNCTION DoorPass (row)
+DECLARE FUNCTION DoorRowOk (r)
 DECLARE FUNCTION DoorTicks (ms)
 DECLARE FUNCTION EggsReachable ()
 DECLARE FUNCTION MineSpotOk (r, c)
@@ -55,10 +56,13 @@ DECLARE SUB Dialog (t1$, t2$, hint$)
 DECLARE SUB DrawCell (r, c)
 DECLARE SUB DrawHud ()
 DECLARE SUB DrawHudCenter (eggFg)
+DECLARE SUB HudCenter (eggFg)
+DECLARE SUB HudPutStr (col, s$, attr)
+DECLARE SUB HudShow (c1, c2)
 DECLARE SUB DrawItems ()
 DECLARE SUB EraseSnake (a)
 DECLARE SUB FillRect (r1, c1, r2, c2, ch, attr)
-DECLARE SUB FindCell (rr, cc)
+DECLARE SUB FindCell (rr, cc, found)
 DECLARE SUB FontClose ()
 DECLARE SUB FontOpen ()
 DECLARE SUB Intro ()
@@ -87,9 +91,12 @@ DECLARE SUB SetBlink (flag)
 DECLARE SUB ShowWait ()
 DECLARE SUB ShrinkSnake (a, n)
 DECLARE SUB Sfx (n)
+DECLARE SUB SnakeDist (r, c, a, dx, dy)
 DECLARE SUB SpawnBonus ()
 DECLARE SUB HeartSpawn ()
+DECLARE SUB PrepareDoors ()
 DECLARE SUB PrepareHeart ()
+DECLARE SUB PrepareMines ()
 DECLARE SUB PutHeart (rr, cc, d)
 DECLARE SUB SpawnMine ()
 DECLARE SUB SpawnPill ()
@@ -102,6 +109,25 @@ CONST EGGGLYPH = 1        'character code redefined as a filled egg
 CONST MAXLIVES = 9
 CONST PILLCUT = 3         'segments a pill takes off the snake (one egg gives 3)
 CONST PILLPTS = 250       'points for a pill
+CONST DOORCAND = 4        'door rows prepared per level (one is used at a time)
+CONST MINECAND = 36       'places prepared for random mines per level
+CONST FINDTRIES = 300     'random tries of FindCell before it checks every cell
+CONST HEARTTRIES = 100    'random places tried for the heart when no corner place is free
+'Times in milliseconds (converted to game steps with stepMs)
+CONST DOORWARNMS = 1500   'a door blinks this long before it opens and before it closes
+CONST DOORHALFMS = 250    'time between the two halves of a door opening or closing
+CONST DOOROPENMS = 20000  'a door stays open
+CONST DOORRETRYMS = 3000  'new try when no door row could be used
+CONST DOORIDLEMS = 10000  'waiting time until a door opens: this plus a random part
+CONST DOORIDLERND = 15000
+CONST DOORSPLITMS = 5000  'the same on divided levels (the doors are the only way over)
+CONST DOORSPLITRND = 6000
+CONST BONUSMS = 10000     'a bonus star stays
+CONST MINELIFEMS = 12000  'a random mine stays
+CONST MINEAWAYMS = 700    'a random mine keeps this much travel time away from a head
+CONST PILLMS = 10000      'a pill stays
+CONST PILLDELAYMS = 2000  'a pill comes this long after the 3rd egg, plus a random part
+CONST PILLDELAYRND = 10000
 
 '---- Global variables of this module only ------------------------------------
 'The playfield is 80 x 50 "pixels": every text character holds two pixels
@@ -122,6 +148,9 @@ DIM SHARED heartRow, heartCol, heartTime, heartMax, tickCnt
 DIM SHARED hcN, hcRow(1 TO 4), hcCol(1 TO 4), hcRat(1 TO 4)   'heart places near the corners; hcRat = path / straight line (x16)
 DIM SHARED bfsFresh                        'TRUE while bfsD holds the result for the arena just built
 DIM SHARED doorTimer, doorRow                      'side doors
+DIM SHARED dcRow(1 TO DOORCAND)                    'prepared door rows (dcN of them, see NIBBLES.BI)
+DIM SHARED mcN, mcRow(1 TO MINECAND), mcCol(1 TO MINECAND)   'prepared places for random mines
+DIM SHARED hudLn$, hudAt$                          'status line: characters and colours, put together in memory
 DIM SHARED newHigh, anyDead, levelDone, stepMs
 DIM SHARED fileFail, fileBusy
 
@@ -224,7 +253,6 @@ SUB AddScore (a, pts)
         highScore = sammy(a).score
         hiName$ = nm$(a)
     END IF
-    bfsFresh = TRUE
 END SUB
 
 'AddToTable:
@@ -324,11 +352,11 @@ FUNCTION CellBusy (rr, cc)
     FOR m = 1 TO fxCount
         IF fxRow(m) = rr AND fxCol(m) = cc THEN EXIT FUNCTION
     NEXT m
-    IF doorState > 0 THEN                       'keep the door lanes free
-        IF rr >= doorRow AND rr <= doorRow + 3 THEN
+    FOR k = 1 TO dcN                            'keep the lanes of the prepared doors free
+        IF rr >= dcRow(k) AND rr <= dcRow(k) + 3 THEN
             IF cc <= 7 OR cc >= 74 THEN EXIT FUNCTION
         END IF
-    END IF
+    NEXT k
     CellBusy = FALSE
 END FUNCTION
 
@@ -434,6 +462,26 @@ FUNCTION DoorFree (mask)
     DoorFree = TRUE
 END FUNCTION
 
+'DoorRowOk:
+'  TRUE if a door can open at text rows r to r + 3: no wall in the three
+'  pixel columns next to the edge, no egg, mine or other item in the lanes,
+'  and none of the prepared heart places
+FUNCTION DoorRowOk (r)
+    DoorRowOk = FALSE
+    FOR pr = r * 2 - 1 TO (r + 3) * 2
+        IF arena(pr, 2) <> pal(4) OR arena(pr, 3) <> pal(4) OR arena(pr, 4) <> pal(4) THEN EXIT FUNCTION
+        IF arena(pr, 77) <> pal(4) OR arena(pr, 78) <> pal(4) OR arena(pr, 79) <> pal(4) THEN EXIT FUNCTION
+    NEXT pr
+    IF ItemInRect(r, 2, r + 3, 7) THEN EXIT FUNCTION
+    IF ItemInRect(r, 74, r + 3, 79) THEN EXIT FUNCTION
+    FOR k = 1 TO hcN
+        IF hcRow(k) >= r AND hcRow(k) <= r + 3 THEN
+            IF hcCol(k) <= 7 OR hcCol(k) >= 74 THEN EXIT FUNCTION
+        END IF
+    NEXT k
+    DoorRowOk = TRUE
+END FUNCTION
+
 'DoorPass:
 '  TRUE if a snake may wrap around on this pixel row (door is not closed)
 FUNCTION DoorPass (row)
@@ -477,10 +525,10 @@ SUB DoorTick
             IF doorTimer <= 0 THEN
                 IF TryChooseDoor THEN
                     doorState = 1
-                    doorTimer = DoorTicks(1500)
+                    doorTimer = DoorTicks(DOORWARNMS)
                     Sfx 9
                 ELSE
-                    doorTimer = DoorTicks(3000)
+                    doorTimer = DoorTicks(DOORRETRYMS)
                 END IF
             END IF
         CASE 1
@@ -490,7 +538,7 @@ SUB DoorTick
                 DoorSet 0, FALSE
                 DoorSet 2, FALSE
                 doorState = 2
-                doorTimer = DoorTicks(250)
+                doorTimer = DoorTicks(DOORHALFMS)
             ELSE
                 DoorBlink 1, (doorTimer \ 2) AND 1
             END IF
@@ -500,27 +548,31 @@ SUB DoorTick
                 DoorSet 1, FALSE
                 DoorSet 3, FALSE
                 doorState = 3
-                doorTimer = DoorTicks(20000)
+                doorTimer = DoorTicks(DOOROPENMS)
             END IF
         CASE 3
             doorTimer = doorTimer - 1
             IF doorTimer <= 0 THEN
                 doorState = 4
-                doorTimer = DoorTicks(1500)
+                doorTimer = DoorTicks(DOORWARNMS)
                 Sfx 9
             END IF
         CASE 4
             IF doorTimer > 0 THEN doorTimer = doorTimer - 1
             IF doorTimer > 0 THEN
-                DoorBlink 2, (doorTimer \ 2) AND 1
+                IF DoorFree(15) THEN
+                    DoorBlink 2, (doorTimer \ 2) AND 1
+                ELSE
+                    DoorBlink 2, FALSE                'a snake is passing: no blinking
+                END IF
             ELSEIF DoorFree(15) THEN
                 DoorBlink 2, FALSE
                 DoorSet 1, TRUE
                 DoorSet 3, TRUE
                 doorState = 5
-                doorTimer = DoorTicks(250)
+                doorTimer = DoorTicks(DOORHALFMS)
             ELSE
-                DoorBlink 2, (tickCnt \ 2) AND 1      'a snake is inside: wait
+                DoorBlink 2, FALSE                    'a snake is inside: wait, the door stays steady
             END IF
         CASE 5
             IF doorTimer > 0 THEN doorTimer = doorTimer - 1
@@ -550,9 +602,9 @@ END FUNCTION
 '  much shorter on the divided levels, where the doors are the only way over
 FUNCTION DoorWaitMs
     IF splitLevel THEN
-        DoorWaitMs = 5000 + INT(RND * 6000)
+        DoorWaitMs = DOORSPLITMS + INT(RND * DOORSPLITRND)
     ELSE
-        DoorWaitMs = 10000 + INT(RND * 15000)
+        DoorWaitMs = DOORIDLEMS + INT(RND * DOORIDLERND)
     END IF
 END FUNCTION
 
@@ -578,47 +630,85 @@ SUB DrawCell (r, c)
 END SUB
 
 'DrawHud:
-'  Status line (row 1): names, lives, scores, level, eggs left, high score
+'  Status line (row 1): names, lives, scores, level, eggs left, high score.
+'  The line is put together in memory and written to the screen in one pass,
+'  so the screen never shows an emptied line (no flicker).
 SUB DrawHud
     hb = pal(12) * 16
-    FillRect 1, 1, 1, 80, 32, pal(11) + hb
+    hudLn$ = SPACE$(80)
+    hudAt$ = STRING$(80, CHR$(pal(11) + hb))
     hc = 12
 
     lv = sammy(1).lives
     IF lv < 0 THEN lv = 0
     IF lv > MAXLIVES THEN lv = MAXLIVES
-    PutStr 1, 2, nm$(1), pal(1) + hb
-    PutStr 1, 11, CHR$(3), hc + hb
-    PutStr 1, 13, LTRIM$(STR$(lv)), pal(11) + hb
-    PutStr 1, 16, Num7$(sammy(1).score), pal(11) + hb
+    HudPutStr 2, nm$(1), pal(1) + hb
+    HudPutStr 11, CHR$(3), hc + hb
+    HudPutStr 13, LTRIM$(STR$(lv)), pal(11) + hb
+    HudPutStr 16, Num7$(sammy(1).score), pal(11) + hb
 
-    DrawHudCenter pal(16)
+    HudCenter pal(16)
 
     IF numPlayers = 2 THEN
         lv = sammy(2).lives
         IF lv < 0 THEN lv = 0
         IF lv > MAXLIVES THEN lv = MAXLIVES
-        PutStr 1, 58, Num7$(sammy(2).score), pal(11) + hb
-        PutStr 1, 66, CHR$(3), hc + hb
-        PutStr 1, 68, LTRIM$(STR$(lv)), pal(11) + hb
-        PutStr 1, 71, nm$(2), pal(2) + hb
+        HudPutStr 58, Num7$(sammy(2).score), pal(11) + hb
+        HudPutStr 66, CHR$(3), hc + hb
+        HudPutStr 68, LTRIM$(STR$(lv)), pal(11) + hb
+        HudPutStr 71, nm$(2), pal(2) + hb
     ELSE
-        PutStr 1, 62, "P=Pause  ESC=Quit", pal(11) + hb
+        HudPutStr 62, "P=Pause  ESC=Quit", pal(11) + hb
     END IF
+    HudShow 1, 80
 END SUB
 
 'DrawHudCenter:
-'  Middle of the status line: level, eggs left (colour eggFg), high score
+'  Redraws only the middle of the status line (columns 24 to 57), in one pass
 SUB DrawHudCenter (eggFg)
+    hb = pal(12) * 16
+    hudLn$ = SPACE$(80)
+    hudAt$ = STRING$(80, CHR$(pal(11) + hb))
+    HudCenter eggFg
+    HudShow 24, 57
+END SUB
+
+'HudCenter:
+'  Puts the middle of the status line into the buffer: level, eggs left
+'  (colour eggFg), high score
+SUB HudCenter (eggFg)
     hb = pal(12) * 16
     a$ = "LEVEL" + STR$(curLevel) + "   "
     b$ = CHR$(eggChr) + STR$(eggLeft)
     c$ = "   HI " + Num7$(highScore)
     sc = (80 - LEN(a$) - LEN(b$) - LEN(c$)) \ 2 + 1
-    FillRect 1, 24, 1, 57, 32, pal(11) + hb
-    PutStr 1, sc, a$, pal(11) + hb
-    PutStr 1, sc + LEN(a$), b$, eggFg + hb
-    PutStr 1, sc + LEN(a$) + LEN(b$), c$, pal(11) + hb
+    HudPutStr 24, SPACE$(34), pal(11) + hb
+    HudPutStr sc, a$, pal(11) + hb
+    HudPutStr sc + LEN(a$), b$, eggFg + hb
+    HudPutStr sc + LEN(a$) + LEN(b$), c$, pal(11) + hb
+END SUB
+
+'HudPutStr:
+'  Puts a text with one colour into the status line buffer (not on the screen)
+SUB HudPutStr (col, s$, attr)
+    n = LEN(s$)
+    IF col + n - 1 > 80 THEN n = 80 - col + 1
+    IF n < 1 THEN EXIT SUB
+    MID$(hudLn$, col, n) = LEFT$(s$, n)
+    MID$(hudAt$, col, n) = STRING$(n, CHR$(attr))
+END SUB
+
+'HudShow:
+'  Writes the columns c1 to c2 of the status line buffer to the screen
+SUB HudShow (c1, c2)
+    DEF SEG = vidSeg
+    ofs = (c1 - 1) * 2
+    FOR c = c1 TO c2
+        POKE ofs, ASC(MID$(hudLn$, c, 1))
+        POKE ofs + 1, ASC(MID$(hudAt$, c, 1))
+        ofs = ofs + 2
+    NEXT c
+    DEF SEG
 END SUB
 
 'DrawItems:
@@ -663,20 +753,37 @@ SUB EraseSnake (a)
 END SUB
 
 'FindCell:
-'  Finds a free text cell (both pixels empty, no item) for an item
-SUB FindCell (rr, cc)
-    tries = 0
-    DO
-        tries = tries + 1
+'  Finds a free text cell (both pixels empty, no item) for an item.  found is
+'  FALSE when there is none.  FINDTRIES random cells are tried first (fast);
+'  if they are all taken, every cell is checked once, from a random start.
+SUB FindCell (rr, cc, found)
+    found = FALSE
+    FOR tries = 1 TO FINDTRIES
         p = INT(RND * 46) + 4
         cc = INT(RND * 78) + 2
         IF p AND 1 THEN q = p + 1 ELSE q = p - 1
         rr = (p + 1) \ 2
-        ok = (arena(p, cc) = pal(4)) AND (arena(q, cc) = pal(4))
-        IF ok THEN
-            IF CellBusy(rr, cc) THEN ok = FALSE
+        IF arena(p, cc) = pal(4) AND arena(q, cc) = pal(4) THEN
+            IF NOT CellBusy(rr, cc) THEN
+                found = TRUE
+                EXIT SUB
+            END IF
         END IF
-    LOOP UNTIL ok OR tries > 2000
+    NEXT tries
+    start = INT(RND * 3588)                     '46 pixel rows x 78 columns
+    FOR i = 0 TO 3587
+        n = (start + i) MOD 3588
+        p = n \ 78 + 4
+        cc = n MOD 78 + 2
+        IF p AND 1 THEN q = p + 1 ELSE q = p - 1
+        rr = (p + 1) \ 2
+        IF arena(p, cc) = pal(4) AND arena(q, cc) = pal(4) THEN
+            IF NOT CellBusy(rr, cc) THEN
+                found = TRUE
+                EXIT SUB
+            END IF
+        END IF
+    NEXT i
 END SUB
 
 'FixEggs:
@@ -689,8 +796,10 @@ SUB FixEggs
             tries = 0
             DO WHILE bfsD((eggRow(e) * 2 - 2) * 80 + eggCol(e) - 1) < 0 AND bfsD((eggRow(e) * 2 - 1) * 80 + eggCol(e) - 1) < 0 AND tries < 200
                 tries = tries + 1
+                oldR = eggRow(e)
                 eggRow(e) = 0
-                FindCell r, c
+                FindCell r, c, found
+                IF NOT found THEN eggRow(e) = oldR: EXIT DO
                 eggRow(e) = r
                 eggCol(e) = c
             LOOP
@@ -1006,10 +1115,7 @@ FUNCTION MineSpotOk (r, c)
         NEXT px
     NEXT pr
     FOR a = 1 TO numPlayers
-        dx = ABS(c - sammy(a).col)
-        dy = ABS(r * 2 - sammy(a).row)
-        dy2 = ABS(r * 2 - 1 - sammy(a).row)
-        IF dy2 < dy THEN dy = dy2
+        SnakeDist r, c, a, dx, dy
         IF dx <= 10 AND dy <= 10 THEN EXIT FUNCTION
     NEXT a
     FOR k = 1 TO fxCount
@@ -1031,13 +1137,11 @@ SUB PlaceEggs
     FOR e = 1 TO eggTotal
         IF deferDraw THEN PollWait
         FOR attempt = 1 TO 40
-            FindCell r, c
+            FindCell r, c, found
+            IF NOT found THEN EXIT FOR                'no free cell at all (cannot really happen)
             okFar = TRUE
             FOR a = 1 TO numPlayers
-                dx = ABS(c - sammy(a).col)
-                dy = ABS(r * 2 - sammy(a).row)
-                dy2 = ABS(r * 2 - 1 - sammy(a).row)
-                IF dy2 < dy THEN dy = dy2
+                SnakeDist r, c, a, dx, dy
                 IF dx <= 8 AND dy <= 8 THEN okFar = FALSE
             NEXT a
             IF okFar THEN EXIT FOR
@@ -1066,7 +1170,8 @@ SUB PlaceFixedMines
         tries = 0
         DO WHILE fxCount < want AND tries < 200
             tries = tries + 1
-            FindCell r, c
+            FindCell r, c, found
+            IF NOT found THEN EXIT DO
             IF MineSpotOk(r, c) THEN
                 fxCount = fxCount + 1
                 fxRow(fxCount) = r
@@ -1299,10 +1404,7 @@ SUB PrepareHeart
             mn = 32000
             FOR a = 1 TO numPlayers
                 IF sammy(a).alive THEN
-                    dx = ABS(bc - sammy(a).col)
-                    dy = ABS(br * 2 - 1 - sammy(a).row)
-                    dy2 = ABS(br * 2 - sammy(a).row)
-                    IF dy2 < dy THEN dy = dy2
+                    SnakeDist br, bc, a, dx, dy
                     IF dx + dy < mn THEN mn = dx + dy
                 END IF
             NEXT a
@@ -1313,6 +1415,89 @@ SUB PrepareHeart
             hcRat(hcN) = rt&
         END IF
     NEXT k
+END SUB
+
+'PrepareDoors:
+'  Called when a level is built (after the eggs, the fixed mines and the heart
+'  places are known).  Picks up to DOORCAND door rows that do not overlap, so
+'  that the game only has to choose one of them.  The lanes of these rows stay
+'  free of items and mines.  dcN = 0 when doors are not used on this level.
+SUB PrepareDoors
+    DIM ord(0 TO 18)
+    dcN = 0
+    IF NOT (doorsOn OR splitLevel) THEN EXIT SUB
+    FOR i = 0 TO 18
+        ord(i) = i + 3
+    NEXT i
+    FOR i = 18 TO 1 STEP -1                     'shuffle the rows 3 to 21
+        j = INT(RND * (i + 1))
+        t = ord(i): ord(i) = ord(j): ord(j) = t
+    NEXT i
+    FOR i = 0 TO 18
+        r = ord(i)
+        ok = DoorRowOk(r)
+        FOR k = 1 TO dcN
+            IF ABS(r - dcRow(k)) < 4 THEN ok = FALSE     'lanes must not overlap
+        NEXT k
+        IF ok THEN
+            dcN = dcN + 1
+            dcRow(dcN) = r
+            IF dcN >= DOORCAND THEN EXIT FOR
+        END IF
+    NEXT i
+END SUB
+
+'PrepareMines:
+'  Called when a level is built, after PrepareHeart (it uses the path search
+'  result of that call) and PrepareDoors.  Collects up to MINECAND places for
+'  the random mines: free cells with empty surroundings, away from the fixed
+'  mines and the door lanes, and reachable by a snake.  SpawnMine only has to
+'  choose one that is far enough from the snakes.
+SUB PrepareMines
+    mcN = 0
+    IF mineMode <> 2 AND mineMode <> 4 THEN EXIT SUB
+    tries = 0
+    DO WHILE mcN < MINECAND AND tries < 300
+        tries = tries + 1
+        r = INT(RND * 24) + 2
+        c = INT(RND * 78) + 2
+        ok = TRUE
+        FOR pr = r * 2 - 3 TO r * 2 + 2             'the surroundings must be empty
+            IF pr < 3 OR pr > 50 THEN ok = FALSE: EXIT FOR
+            FOR px = c - 2 TO c + 2
+                IF px < 1 OR px > 80 THEN ok = FALSE: EXIT FOR
+                IF arena(pr, px) <> pal(4) THEN ok = FALSE: EXIT FOR
+            NEXT px
+            IF NOT ok THEN EXIT FOR
+        NEXT pr
+        IF ok THEN
+            IF CellBusy(r, c) THEN ok = FALSE
+        END IF
+        IF ok THEN
+            FOR k = 1 TO fxCount                    'away from the fixed mines
+                IF ABS(c - fxCol(k)) <= 5 AND ABS(r - fxRow(k)) <= 3 THEN ok = FALSE
+            NEXT k
+            FOR k = 1 TO dcN                        'away from the door lanes
+                IF r >= dcRow(k) - 1 AND r <= dcRow(k) + 4 THEN
+                    IF c <= 10 OR c >= 71 THEN ok = FALSE
+                END IF
+            NEXT k
+        END IF
+        IF ok THEN
+            p = (r * 2 - 2) * 80 + c - 1
+            IF bfsD(p) < 0 OR bfsD(p + 80) < 0 THEN ok = FALSE
+        END IF
+        IF ok THEN
+            FOR k = 1 TO mcN                        'not twice the same place
+                IF mcRow(k) = r AND mcCol(k) = c THEN ok = FALSE
+            NEXT k
+        END IF
+        IF ok THEN
+            mcN = mcN + 1
+            mcRow(mcN) = r
+            mcCol(mcN) = c
+        END IF
+    LOOP
 END SUB
 
 'PutHeart:
@@ -1405,6 +1590,10 @@ SUB ReadKeys
                 END IF
             CASE CHR$(27)
                 IF AskYesNo("Quit to the menu?") THEN
+                    variant = INT(RND * 3) + 1         'the living snakes die, no life is lost
+                    FOR a = 1 TO numPlayers
+                        IF sammy(a).alive THEN DeathAnim a, variant
+                    NEXT a
                     abortGame = TRUE
                     EXIT DO
                 END IF
@@ -1535,6 +1724,7 @@ SUB RunBfs (useDoors)
             IF bfsD(j) = -1 THEN bfsD(j) = d: bfsQ(qt) = j: qt = qt + 1
         END IF
     LOOP
+    bfsFresh = TRUE
 END SUB
 
 'SaveConfig:
@@ -1578,12 +1768,12 @@ SUB Sfx (n)
         CASE 3: PLAY "MBMNT180O3>L32C<BA-GF+FEE-DC+C"        'crash (cartoon fall)
         CASE 4: PLAY "MBMNT160O2L16CEGO3CEGO4C"          'level complete
         CASE 5: PLAY "MBMNT200O3L32EGB>CL16E"            'bonus
-        CASE 7: PLAY "MBMNT220O2L32GBGB"                  'heart appears
+        CASE 7: PLAY "MBMNT180O3L16EGEGL8>C"               'heart appears (sparkle)
         CASE 8: PLAY "MBMNT180O3L16CEGB>CE"               'heart caught
-        CASE 9: PLAY "MBMNT200O2L32CEC"                   'door warning
-        CASE 10: PLAY "T255MSL64O1GFEDCO0BAGFEDCP64O2GFEDCO1BAGFEDC"   'mine explosion
-        CASE 11: PLAY "MBMNT190O3L32CDEFGAB>CL16EGL8>C"   'pill eaten (rising run, then a bright chord)
-        CASE 12: PLAY "MBMNT220O4L32EP32EP32>C"           'pill appears (short alert)
+        CASE 9: PLAY "MBMNT160O3L8GL4E"                    'door warning (two falling notes)
+        CASE 10: PLAY "MBT255MSL64O1GFEDCO0BAGFEDCP64O2GFEDCO1BAGFEDC" 'mine explosion
+        CASE 11: PLAY "MBMNT250O4L32CO3BB-AA-GG-FEL16C"   'pill eaten (chromatic slide down)
+        CASE 12: PLAY "MBMNT220O4L32GEGEGE"                'pill appears (short trill)
     END SELECT
 END SUB
 
@@ -1602,14 +1792,25 @@ SUB ShrinkSnake (a, n)
     LOOP
 END SUB
 
+'SnakeDist:
+'  Distance of text cell (r, c) from the head of snake a: dx in columns, dy in
+'  pixel rows (the nearer of the two pixels of the cell)
+SUB SnakeDist (r, c, a, dx, dy)
+    dx = ABS(c - sammy(a).col)
+    dy = ABS(r * 2 - sammy(a).row)
+    dy2 = ABS(r * 2 - 1 - sammy(a).row)
+    IF dy2 < dy THEN dy = dy2
+END SUB
+
 'SpawnBonus:
 '  Puts a bonus star on a free spot
 SUB SpawnBonus
-    FindCell r, c
+    FindCell r, c, found
+    IF NOT found THEN EXIT SUB
     bonRow = r
     bonCol = c
     bonOn = TRUE
-    bonTime = 10000 \ (stepMs + 10)
+    bonTime = BONUSMS \ (stepMs + 10)
     PutChar bonRow, bonCol, 4, pal(10) + pal(4) * 16
 END SUB
 
@@ -1617,7 +1818,7 @@ END SUB
 '  The heart appears at the prepared corner place that is farthest from the
 '  nearest snake (path length estimated from the straight line distance and
 '  the path / straight line ratio worked out when the arena was built).  If no
-'  corner place can be used, 40 random free places are tried.  Nothing here is
+'  corner place can be used, HEARTTRIES random free places are tried.  Nothing here is
 '  slow, the heart is there at once.
 SUB HeartSpawn
     best = -1
@@ -1628,10 +1829,7 @@ SUB HeartSpawn
                 dmin = 32000
                 FOR a = 1 TO numPlayers
                     IF sammy(a).alive THEN
-                        dx = ABS(hcCol(k) - sammy(a).col)
-                        dy = ABS(hcRow(k) * 2 - 1 - sammy(a).row)
-                        dy2 = ABS(hcRow(k) * 2 - sammy(a).row)
-                        IF dy2 < dy THEN dy = dy2
+                        SnakeDist hcRow(k), hcCol(k), a, dx, dy
                         est = ((dx + dy) * hcRat(k)) \ 16
                         IF est < dmin THEN dmin = est
                     END IF
@@ -1648,11 +1846,11 @@ SUB HeartSpawn
         EXIT SUB
     END IF
 
-    'no corner place: the farthest of 40 random free places that can be reached
+    'no corner place: the farthest of HEARTTRIES random free places that can be reached
     best = -1
     br = 0
     bc = 0
-    FOR t = 1 TO 40
+    FOR t = 1 TO HEARTTRIES
         rr = 3 + INT(RND * 22)
         cc = 2 + INT(RND * 78)
         p = (rr * 2 - 2) * 80 + cc - 1
@@ -1662,10 +1860,7 @@ SUB HeartSpawn
                     dmin = 32000
                     FOR a = 1 TO numPlayers
                         IF sammy(a).alive THEN
-                            dx = ABS(cc - sammy(a).col)
-                            dy = ABS(rr * 2 - 1 - sammy(a).row)
-                            dy2 = ABS(rr * 2 - sammy(a).row)
-                            IF dy2 < dy THEN dy = dy2
+                            SnakeDist rr, cc, a, dx, dy
                             est = (dx + dy) + (dx + dy) \ 4
                             IF est < dmin THEN dmin = est
                         END IF
@@ -1686,6 +1881,7 @@ END SUB
 'SpawnMine:
 '  Puts a mine on a free spot that is not close to any snake head.  The
 '  required distance grows with the game speed (about 0.7 seconds of travel).
+'  The places prepared when the level was built are tried first.
 SUB SpawnMine
     slot = 0
     FOR m = 1 TO MAXMINE
@@ -1693,24 +1889,46 @@ SUB SpawnMine
     NEXT m
     IF slot = 0 THEN EXIT SUB
 
-    minDist = 700 \ stepMs
+    minDist = MINEAWAYMS \ stepMs
     IF minDist < 6 THEN minDist = 6
     IF minDist > 30 THEN minDist = 30
 
+    'first choice: the prepared places, starting at a random one
+    IF mcN > 0 THEN
+        k0 = INT(RND * mcN)
+        FOR i = 0 TO mcN - 1
+            k = ((k0 + i) MOD mcN) + 1
+            r = mcRow(k)
+            c = mcCol(k)
+            okFar = (arena(r * 2 - 1, c) = pal(4)) AND (arena(r * 2, c) = pal(4))
+            IF okFar THEN okFar = NOT CellBusy(r, c)
+            FOR a = 1 TO numPlayers
+                SnakeDist r, c, a, dx, dy
+                IF dx <= minDist AND dy <= minDist THEN okFar = FALSE
+            NEXT a
+            IF okFar THEN
+                minRow(slot) = r
+                minCol(slot) = c
+                minTime(slot) = MINELIFEMS \ (stepMs + 10)
+                PutChar r, c, MINECHAR, pal(15) + pal(4) * 16
+                EXIT SUB
+            END IF
+        NEXT i
+    END IF
+
+    'back-up (tight levels, no prepared place far enough): search at random
     FOR attempt = 1 TO 60
-        FindCell r, c
+        FindCell r, c, found
+        IF NOT found THEN EXIT SUB
         okFar = (arena(r * 2 - 1, c) = pal(4)) AND (arena(r * 2, c) = pal(4))
         FOR a = 1 TO numPlayers
-            dx = ABS(c - sammy(a).col)
-            dy = ABS(r * 2 - sammy(a).row)
-            dy2 = ABS(r * 2 - 1 - sammy(a).row)
-            IF dy2 < dy THEN dy = dy2
+            SnakeDist r, c, a, dx, dy
             IF dx <= minDist AND dy <= minDist THEN okFar = FALSE
         NEXT a
         IF okFar THEN
             minRow(slot) = r
             minCol(slot) = c
-            minTime(slot) = 12000 \ (stepMs + 10)
+            minTime(slot) = MINELIFEMS \ (stepMs + 10)
             PutChar r, c, MINECHAR, pal(15) + pal(4) * 16
             EXIT SUB
         END IF
@@ -1720,14 +1938,15 @@ END SUB
 'SpawnPill:
 '  Puts a pill on a free spot (once per level, twice on levels with more than 20 eggs)
 SUB SpawnPill
-    FindCell r, c
+    FindCell r, c, found
+    IF NOT found THEN EXIT SUB
     pillRow = r
     pillCol = c
     pillClr = 11
     IF pal(4) = 3 THEN pillClr = 13           'light cyan would vanish on cyan
     pillOn = TRUE
     pillCnt = pillCnt + 1
-    pillTime = 10000 \ (stepMs + 10)
+    pillTime = PILLMS \ (stepMs + 10)
     PutChar pillRow, pillCol, 5, pillClr + pal(4) * 16
     Sfx 12
 END SUB
@@ -1904,7 +2123,7 @@ SUB Tick
                         IF pillCnt < pillMax AND pillWait = 0 AND NOT pillOn THEN
                             IF pillCnt = 0 THEN need = 3 ELSE need = eggTotal \ 2
                             IF eggTotal - eggLeft >= need THEN
-                                pillWait = 2000 \ (stepMs + 10) + INT(RND * (10000 \ (stepMs + 10))) + 1
+                                pillWait = PILLDELAYMS \ (stepMs + 10) + INT(RND * (PILLDELAYRND \ (stepMs + 10))) + 1
                             END IF
                         END IF
                         IF mineMode = 2 OR mineMode = 4 THEN
@@ -1946,28 +2165,31 @@ SUB Tick
 END SUB
 
 'TryChooseDoor:
-'  Picks a row for the next door pair.  The lanes in front of both doors
-'  must be empty (no wall, snake, item or mine).  FALSE if none was found.
+'  Picks a row for the next door pair: one of the rows prepared when the level
+'  was built (PrepareDoors).  The lanes in front of both doors must still be
+'  empty (no wall, snake, item or mine).  On a divided level without a
+'  prepared row any row is tried.  FALSE if none was found.
 FUNCTION TryChooseDoor
     TryChooseDoor = FALSE
-    FOR attempt = 1 TO 30
-        r = INT(RND * 19) + 3
-        ok = TRUE
-        FOR pr = r * 2 - 1 TO (r + 3) * 2
-            IF arena(pr, 2) <> pal(4) OR arena(pr, 3) <> pal(4) OR arena(pr, 4) <> pal(4) THEN ok = FALSE: EXIT FOR
-            IF arena(pr, 77) <> pal(4) OR arena(pr, 78) <> pal(4) OR arena(pr, 79) <> pal(4) THEN ok = FALSE: EXIT FOR
-        NEXT pr
-        IF ok THEN
-            IF ItemInRect(r, 2, r + 3, 7) THEN ok = FALSE
-        END IF
-        IF ok THEN
-            IF ItemInRect(r, 74, r + 3, 79) THEN ok = FALSE
-        END IF
-        IF ok THEN
-            doorRow = r
-            TryChooseDoor = TRUE
-            EXIT FUNCTION
-        END IF
-    NEXT attempt
+    IF dcN > 0 THEN
+        k0 = INT(RND * dcN)                     'one of the prepared rows, in random order
+        FOR i = 0 TO dcN - 1
+            r = dcRow(((k0 + i) MOD dcN) + 1)
+            IF DoorRowOk(r) THEN
+                doorRow = r
+                TryChooseDoor = TRUE
+                EXIT FUNCTION
+            END IF
+        NEXT i
+    ELSEIF splitLevel THEN                      'divided level without a prepared row: the doors are the only way over
+        FOR attempt = 1 TO 30
+            r = INT(RND * 19) + 3
+            IF DoorRowOk(r) THEN
+                doorRow = r
+                TryChooseDoor = TRUE
+                EXIT FUNCTION
+            END IF
+        NEXT attempt
+    END IF
 END FUNCTION
 

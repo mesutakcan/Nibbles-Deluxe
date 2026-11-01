@@ -5,8 +5,8 @@
 '  level layouts.  The main module is NIBBLESD.BAS.
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 18
-'  2026-10-28
+'  Version 19
+'  2026-11-01
 '
 '  Build: both modules are compiled with BC and linked together.
 '  For detailed information, please refer to the README.md file.
@@ -56,7 +56,9 @@ DECLARE SUB RedrawRows (r1, r2)
 DECLARE SUB RunBfs (useDoors)
 DECLARE SUB FixEggs ()
 DECLARE SUB PollWait ()
+DECLARE SUB PrepareDoors ()
 DECLARE SUB PrepareHeart ()
+DECLARE SUB PrepareMines ()
 DECLARE SUB SetBlink (flag)
 DECLARE SUB ShowScores ()
 DECLARE SUB ShowWait ()
@@ -64,7 +66,7 @@ DECLARE SUB SparklePause ()
 DECLARE SUB Wall (row, col)
 
 '---- Constants used in this module only --------------------------------------
-CONST VERSIONTXT = "VERSION 18"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 19"   'shown on the title screen
 
 'ApplyTheme:
 '  Fills the colour table.  Entries:
@@ -614,9 +616,10 @@ SUB Intro
     Center 10, "D E L U X E   E D I T I O N   -   " + VERSIONTXT, 14
     Center 11, "based on Microsoft QBasic Nibbles (C) 1990", 8
 
-    Center 13, "Steer your snake around the arena and collect all the eggs to", 7
-    Center 14, "finish a level.  Every egg makes you longer and scores 100 points.", 7
-    Center 15, "Catch the flashing star for a bonus and the heart for an extra life!", 7
+    Center 12, "Steer your snake around the arena and collect all the eggs to", 7
+    Center 13, "finish a level.  Every egg makes you longer and scores 100 points.", 7
+    Center 14, "Catch the flashing star for a bonus and the heart for an extra life!", 7
+    Center 15, "The flashing pill scores 250 points and makes your snake shorter.", 7
     Center 16, "Avoid walls, the other snake, your own tail and the red mines.", 7
     Center 17, "Side doors open now and then - go through and exit on the other side!", 7
 
@@ -1077,6 +1080,7 @@ SUB Level (what)
         minTime(m) = 0
     NEXT m
     doorState = 0
+    dcN = 0                                     'no door lanes reserved while the level is built
     IF what <> SAMELEVEL THEN fxCount = 0       'same level again: same fixed mines
     PlaceEggs
     IF deferDraw THEN PollWait
@@ -1089,6 +1093,8 @@ SUB Level (what)
         IF NOT EggsReachable THEN PlaceFixedMines
     END IF
     PrepareHeart                                 'places of the heart, near the corners
+    PrepareDoors                                 'door rows (one of them is used in the game)
+    PrepareMines                                 'places for the random mines
     IF NOT deferDraw THEN RedrawRows 2, 25
 END SUB
 

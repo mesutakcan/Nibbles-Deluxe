@@ -190,3 +190,25 @@ The changelog begins with Version 2, the first version developed here.
   `COMMON SHARED` variables) are now in one include file, `NIBBLES.BI`, which has to be in the
   same folder as `NIBBLESD.BAS` and `NIBBLEUI.BAS`; `NIBBLESD_ALL.BAS` for QB64-PE contains the
   same code merged into one file
+
+### Version 19 - 2026-11-01
+
+- The rows where a side door can open are now worked out when a level is built (up to four per
+  level, the game uses one of them at a time). No egg, star, pill, heart or mine is ever put in
+  the lanes in front of those doors
+- A door no longer blinks while a snake is going through it; it stays steady until the snake is
+  out
+- Random mines now appear on places that are prepared when the level is built: free, open spots
+  that a snake can reach, away from the fixed mines and the door lanes. On a very crowded level
+  the old random search is still used as a back-up
+- Quitting to the menu with ESC during play (answer Yes) now plays a death animation for the
+  living snakes before the menu appears; no life is lost
+- The status line is put together in memory and written in one pass, so it no longer flickers
+  when a value changes
+- New sounds for the heart that appears, the door warning, eating a pill and the pill that
+  appears
+- The intro text on the title screen explains the pill
+- Fixed: the places for the heart could be worked out from the path search of the previous level
+  on levels without fixed mines
+- Searching for a free cell for an item is more reliable on crowded levels: after 300 random
+  tries every cell is checked, and nothing is placed if there is no free cell

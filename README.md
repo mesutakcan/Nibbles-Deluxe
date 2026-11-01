@@ -42,13 +42,16 @@ consists of two modules for QuickBASIC 4.5, always called `NIBBLESD.BAS` (the ma
 - Bright snake heads; the snakes are visible before a round starts
 - Two-tone striped snake bodies, with a plain dark neck right behind the bright head, so the head
   is easy to tell from the tail
-- Red mines: random mines pop up during play, fixed mines are placed when a level starts
-  (the game checks that every egg stays reachable); mode OFF / RANDOM / FIXED / BOTH
+- Red mines: random mines pop up during play (on places that are prepared when the level is built),
+  fixed mines are placed when a level starts (the game checks that every egg stays reachable);
+  mode OFF / RANDOM / FIXED / BOTH
 - A snake that hits a mine blows up: a flash and a shower of flying sparks (`*`, `+` and a small dot, getting smaller as they
   cool down) with an explosion sound
-- Three death animations, chosen at random
+- Three death animations, chosen at random (also played when you quit to the menu during play)
 - The egg counter in the status line blinks when only 1 or 2 eggs are left
 - Side doors: now and then the walls open on both sides; go through one and come out on the other side
+  (the door rows are worked out when a level is built, and the lanes in front of them stay free of
+  items and mines)
 - Turn buffer: fast key presses are never lost, and a snake can no longer reverse into itself
 - Flashing bonus stars and a bonus for completing a level
 - Sound effects for every event: round start, eating an egg, crash, bonus star, heart, pill,
@@ -137,7 +140,7 @@ a folder that is write-protected.
 | Arrow keys (or keypad 8 2 4 6) | Player 1 steers |
 | W A S D | Player 2 steers (in one player mode they steer player 1, too) |
 | P | Pause |
-| ESC | Quit to the menu (asks Yes / No: arrow keys + ENTER, or Y / N; the default is No) |
+| ESC | Quit to the menu (asks Yes / No: arrow keys + ENTER, or Y / N; the default is No; on Yes your snakes die with a death animation, but no life is lost) |
 | SPACE or ENTER | Close a message box (ESC in a message box also offers to quit to the menu) |
 
 Menus: UP / DOWN select a line, LEFT / RIGHT (or SPACE) change a setting, ENTER starts the
@@ -177,17 +180,21 @@ snakes die.
 - **Speed**: gets about 7 percent faster with every level (can be switched off).
 
 **Side doors** open now and then in the left and right walls (a gap four text rows high). They
-blink twice as a warning, open and stay open for about 10 seconds, then blink again and close.
-A snake that enters an open door leaves the arena on the other side, like in Pac-Man. The doors
-never open in front of walls, snakes, eggs or mines, and they wait to close while a snake is
-still inside the gap. They can be switched off with the **Doors** setting, except on the divided
-levels 21 to 25, where they always work (see Levels).
+blink twice as a warning, open and stay open for about 10 seconds, then blink again and close. A
+snake that enters an open door leaves the arena on the other side, like in Pac-Man. The doors
+never open in front of walls, snakes, eggs or mines, and they wait to close while a snake is still
+inside the gap; a door does not blink while a snake is passing through it. The rows where a door
+can open (up to four per level) are worked out when the level is built, and no egg, star, pill,
+heart or mine is ever placed in the lanes in front of them. The doors can be switched off with
+the **Doors** setting, except on the divided levels 21 to 25, where they always work (see Levels).
 
-If a snake crashes, the level starts again with the same walls. Red mines may appear
-randomly after an egg is eaten. There can be up to three mines on screen at once, never
-close to a snake head; each stays steady and disappears after about 12 seconds. Hitting one costs
-a life, and the mine explodes with a flash, flying sparks and an explosion sound. A fixed mine that
-has exploded is not drawn again until the level is built anew.
+If a snake crashes, the level starts again with the same walls. Red mines may appear randomly
+after an egg is eaten. There can be up to three mines on screen at once, never close to a snake
+head; each stays steady and disappears after about 12 seconds. The places for them are prepared
+when the level is built: free, open spots that a snake can reach, away from the fixed mines and
+the door lanes (on a very crowded level the game searches for a spot at random). Hitting one costs
+a life, and the mine explodes with a flash, flying sparks and an explosion sound. A fixed mine
+that has exploded is not drawn again until the level is built anew.
 
 **Fixed mines** are placed when a level starts (from level 2: level number / 2, at most 6;
 with two players they come in point symmetric pairs, so neither side has an advantage) and
@@ -195,7 +202,8 @@ stay until the level ends. A path search makes sure that every egg can still be 
 Which kinds of mines appear is set with the **Mines** setting (default BOTH).
 
 When a snake dies, one of three death animations is played (the two body shades blink away
-in turn, the snake is wiped out from head to tail, or both one after the other).
+in turn, the snake is wiped out from head to tail, or both one after the other). The same
+animation is played when you quit to the menu with ESC during play; that costs no life.
 
 ## Levels
 
