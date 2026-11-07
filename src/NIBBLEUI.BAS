@@ -2,11 +2,11 @@
 '                     N I B B L E S   D E L U X E
 '
 '  Module 2 of 2 (NIBBLEUI.BAS): screens, menus, drawing helpers and the
-'  level layouts.  The main module is NIBBLESD.BAS.
+'  level builder (the layouts come from NIBBLES.LVL).  The main module is NIBBLESD.BAS.
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 19
-'  2026-11-01
+'  Version 20
+'  2026-11-07
 '
 '  Build: both modules are compiled with BC and linked together.
 '  For detailed information, please refer to the README.md file.
@@ -48,6 +48,7 @@ DECLARE SUB EditName (who)
 DECLARE SUB FillRect (r1, c1, r2, c2, ch, attr)
 DECLARE SUB Intro ()
 DECLARE SUB Level (what)
+DECLARE SUB LoadLevelRec (k, rec$)
 DECLARE SUB PlaceEggs ()
 DECLARE SUB PlaceFixedMines ()
 DECLARE SUB PutChar (row, col, ch, attr)
@@ -66,7 +67,7 @@ DECLARE SUB SparklePause ()
 DECLARE SUB Wall (row, col)
 
 '---- Constants used in this module only --------------------------------------
-CONST VERSIONTXT = "VERSION 19"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 20"   'shown on the title screen
 
 'ApplyTheme:
 '  Fills the colour table.  Entries:
@@ -197,7 +198,7 @@ SUB ChangeSetting (sel, d)
         CASE 4
             startLevel = startLevel + d
             IF startLevel < 1 THEN startLevel = 1
-            IF startLevel > NUMLEVELS THEN startLevel = NUMLEVELS
+            IF startLevel > numLevels THEN startLevel = numLevels
         CASE 5
             theme = theme + d
             IF theme > 5 THEN theme = 1
@@ -541,7 +542,7 @@ FUNCTION GameOverScreen
     IF victory THEN
         Center r, "C O N G R A T U L A T I O N S !", attr
         r = r + 1
-        Center r, "You completed all" + STR$(NUMLEVELS) + " levels!", attr
+        Center r, "You completed all" + STR$(numLevels) + " levels!", attr
     ELSE
         Center r, "G A M E   O V E R", attr
     END IF
@@ -619,9 +620,9 @@ SUB Intro
     Center 12, "Steer your snake around the arena and collect all the eggs to", 7
     Center 13, "finish a level.  Every egg makes you longer and scores 100 points.", 7
     Center 14, "Catch the flashing star for a bonus and the heart for an extra life!", 7
-    Center 15, "The flashing pill scores 250 points and makes your snake shorter.", 7
+    Center 15, "From level 6 on, a flashing pill scores 250 points and shortens you.", 7
     Center 16, "Avoid walls, the other snake, your own tail and the red mines.", 7
-    Center 17, "Side doors open now and then - go through and exit on the other side!", 7
+    Center 17, "From level 6 on, side doors open now and then - go through them!", 7
 
     Center 18, "PLAYER 1  -  arrow keys  (or keypad 8 2 4 6)", 11
     Center 19, "PLAYER 2  -  W A S D     (W A S D also work in 1 player mode)", 13
@@ -663,377 +664,23 @@ SUB Level (what)
         Wall r, 80
     NEXT r
 
-    lv = lvOrder(((curLevel - 1) MOD NUMLEVELS) + 1)
-    splitLevel = (lv >= 21)
-    SELECT CASE lv
-        CASE 1
-            sammy(1).row = 25: sammy(2).row = 25
-            sammy(1).col = 50: sammy(2).col = 30
-            sammy(1).direction = 4: sammy(2).direction = 3
-
-        CASE 2
-            FOR i = 20 TO 60
-                Wall 25, i
-            NEXT i
-            sammy(1).row = 7: sammy(2).row = 43
-            sammy(1).col = 60: sammy(2).col = 20
-            sammy(1).direction = 3: sammy(2).direction = 4
-
-        CASE 3
-            FOR i = 10 TO 40
-                Wall i, 20
-                Wall i, 60
-            NEXT i
-            sammy(1).row = 25: sammy(2).row = 25
-            sammy(1).col = 50: sammy(2).col = 30
-            sammy(1).direction = 1: sammy(2).direction = 2
-
-        CASE 4
-            FOR i = 4 TO 30
-                Wall i, 20
-                Wall 53 - i, 60
-            NEXT i
-            FOR i = 2 TO 40
-                Wall 38, i
-                Wall 15, 81 - i
-            NEXT i
-            sammy(1).row = 7: sammy(2).row = 43
-            sammy(1).col = 60: sammy(2).col = 20
-            sammy(1).direction = 3: sammy(2).direction = 4
-
-        CASE 5
-            FOR i = 13 TO 39
-                Wall i, 21
-                Wall i, 59
-            NEXT i
-            FOR i = 23 TO 57
-                Wall 11, i
-                Wall 41, i
-            NEXT i
-            sammy(1).row = 25: sammy(2).row = 25
-            sammy(1).col = 50: sammy(2).col = 30
-            sammy(1).direction = 1: sammy(2).direction = 2
-
-        CASE 6
-            FOR i = 4 TO 49
-                IF i > 30 OR i < 23 THEN
-                    Wall i, 10
-                    Wall i, 20
-                    Wall i, 30
-                    Wall i, 40
-                    Wall i, 50
-                    Wall i, 60
-                    Wall i, 70
-                END IF
-            NEXT i
-            sammy(1).row = 10: sammy(2).row = 43
-            sammy(1).col = 65: sammy(2).col = 15
-            sammy(1).direction = 2: sammy(2).direction = 1
-
-        CASE 7
-            FOR i = 4 TO 49 STEP 2
-                Wall i, 40
-            NEXT i
-            sammy(1).row = 10: sammy(2).row = 43
-            sammy(1).col = 65: sammy(2).col = 15
-            sammy(1).direction = 2: sammy(2).direction = 1
-
-        CASE 8
-            FOR i = 4 TO 40
-                Wall i, 10
-                Wall 53 - i, 20
-                Wall i, 30
-                Wall 53 - i, 40
-                Wall i, 50
-                Wall 53 - i, 60
-                Wall i, 70
-            NEXT i
-            sammy(1).row = 10: sammy(2).row = 43
-            sammy(1).col = 65: sammy(2).col = 15
-            sammy(1).direction = 2: sammy(2).direction = 1
-
-        CASE 9
-            FOR i = 6 TO 47
-                Wall i, i
-                Wall i, i + 28
-            NEXT i
-            sammy(1).row = 40: sammy(2).row = 15
-            sammy(1).col = 75: sammy(2).col = 5
-            sammy(1).direction = 1: sammy(2).direction = 2
-
-        CASE 10
-            FOR i = 4 TO 49 STEP 2
-                Wall i, 10
-                Wall i + 1, 20
-                Wall i, 30
-                Wall i + 1, 40
-                Wall i, 50
-                Wall i + 1, 60
-                Wall i, 70
-            NEXT i
-            sammy(1).row = 10: sammy(2).row = 43
-            sammy(1).col = 65: sammy(2).col = 15
-            sammy(1).direction = 2: sammy(2).direction = 1
-
-        CASE 11                          'a box with four gates
-            FOR i = 25 TO 55
-                IF i < 37 OR i > 43 THEN
-                    Wall 15, i
-                    Wall 35, i
-                END IF
-            NEXT i
-            FOR i = 15 TO 35
-                IF i < 23 OR i > 27 THEN
-                    Wall i, 25
-                    Wall i, 55
-                END IF
-            NEXT i
-            sammy(1).row = 7: sammy(2).row = 43
-            sammy(1).col = 65: sammy(2).col = 15
-            sammy(1).direction = 3: sammy(2).direction = 4
-
-        CASE 12                          'level 12: a big plus sign
-            FOR i = 2 TO 79
-                IF i < 36 OR i > 44 THEN Wall 26, i
-            NEXT i
-            FOR i = 4 TO 49
-                IF i < 22 OR i > 30 THEN Wall i, 40
-            NEXT i
-            sammy(1).row = 7: sammy(2).row = 43
-            sammy(1).col = 65: sammy(2).col = 15
-            sammy(1).direction = 3: sammy(2).direction = 4
-
-        CASE 13                          'bunkers: four corner pockets
-            FOR i = 2 TO 22: Wall 14, i: Wall 39, i: NEXT i
-            FOR i = 59 TO 79: Wall 14, i: Wall 39, i: NEXT i
-            FOR i = 4 TO 7: Wall i, 22: Wall i, 59: NEXT i
-            FOR i = 46 TO 49: Wall i, 22: Wall i, 59: NEXT i
-            sammy(1).row = 25: sammy(2).row = 25
-            sammy(1).col = 50: sammy(2).col = 30
-            sammy(1).direction = 1: sammy(2).direction = 2
-
-        CASE 14                          'pinwheel
-            FOR i = 0 TO 13: Wall 8 + i, 10 + i: Wall 8 + i, 11 + i: NEXT i
-            FOR i = 0 TO 13: Wall 8 + i, 70 - i: Wall 8 + i, 71 - i: NEXT i
-            FOR i = 0 TO 13: Wall 45 + i, 23 - i: Wall 45 + i, 24 - i: NEXT i
-            FOR i = 0 TO 13: Wall 32 + i, 57 + i: Wall 32 + i, 58 + i: NEXT i
-            FOR i = 14 TO 22: Wall i, 40: NEXT i
-            FOR i = 31 TO 39: Wall i, 40: NEXT i
-            sammy(1).row = 25: sammy(2).row = 25
-            sammy(1).col = 50: sammy(2).col = 30
-            sammy(1).direction = 4: sammy(2).direction = 3
-
-        CASE 15                          'diamond
-            FOR i = 0 TO 11: Wall 12 + i, 36 - i: Wall 12 + i, 37 - i: NEXT i
-            FOR i = 0 TO 11: Wall 12 + i, 44 + i: Wall 12 + i, 45 + i: NEXT i
-            FOR i = 0 TO 9: Wall 30 + i, 27 + i: Wall 30 + i, 28 + i: NEXT i
-            FOR i = 0 TO 9: Wall 30 + i, 52 - i: Wall 30 + i, 53 - i: NEXT i
-            FOR i = 25 TO 27: FOR j = 38 TO 41: Wall i, j: NEXT j: NEXT i
-            sammy(1).row = 7: sammy(2).row = 46
-            sammy(1).col = 65: sammy(2).col = 15
-            sammy(1).direction = 3: sammy(2).direction = 4
-
-        CASE 16                          'pillars
-            FOR i = 9 TO 12: FOR j = 10 TO 13: Wall i, j: NEXT j: NEXT i
-            FOR i = 9 TO 12: FOR j = 24 TO 27: Wall i, j: NEXT j: NEXT i
-            FOR i = 9 TO 12: FOR j = 38 TO 41: Wall i, j: NEXT j: NEXT i
-            FOR i = 9 TO 12: FOR j = 52 TO 55: Wall i, j: NEXT j: NEXT i
-            FOR i = 9 TO 12: FOR j = 66 TO 69: Wall i, j: NEXT j: NEXT i
-            FOR i = 19 TO 22: FOR j = 17 TO 20: Wall i, j: NEXT j: NEXT i
-            FOR i = 19 TO 22: FOR j = 31 TO 34: Wall i, j: NEXT j: NEXT i
-            FOR i = 19 TO 22: FOR j = 45 TO 48: Wall i, j: NEXT j: NEXT i
-            FOR i = 19 TO 22: FOR j = 59 TO 62: Wall i, j: NEXT j: NEXT i
-            FOR i = 19 TO 22: FOR j = 73 TO 76: Wall i, j: NEXT j: NEXT i
-            FOR i = 29 TO 32: FOR j = 10 TO 13: Wall i, j: NEXT j: NEXT i
-            FOR i = 29 TO 32: FOR j = 24 TO 27: Wall i, j: NEXT j: NEXT i
-            FOR i = 29 TO 32: FOR j = 38 TO 41: Wall i, j: NEXT j: NEXT i
-            FOR i = 29 TO 32: FOR j = 52 TO 55: Wall i, j: NEXT j: NEXT i
-            FOR i = 29 TO 32: FOR j = 66 TO 69: Wall i, j: NEXT j: NEXT i
-            FOR i = 39 TO 42: FOR j = 17 TO 20: Wall i, j: NEXT j: NEXT i
-            FOR i = 39 TO 42: FOR j = 31 TO 34: Wall i, j: NEXT j: NEXT i
-            FOR i = 39 TO 42: FOR j = 45 TO 48: Wall i, j: NEXT j: NEXT i
-            FOR i = 39 TO 42: FOR j = 59 TO 62: Wall i, j: NEXT j: NEXT i
-            FOR i = 39 TO 42: FOR j = 73 TO 76: Wall i, j: NEXT j: NEXT i
-            sammy(1).row = 7: sammy(2).row = 46
-            sammy(1).col = 65: sammy(2).col = 15
-            sammy(1).direction = 3: sammy(2).direction = 4
-
-        CASE 17                          'serpentine
-            FOR i = 2 TO 70: Wall 13, i: Wall 33, i: NEXT i
-            FOR i = 10 TO 79: Wall 23, i: Wall 43, i: NEXT i
-            sammy(1).row = 7: sammy(2).row = 46
-            sammy(1).col = 65: sammy(2).col = 15
-            sammy(1).direction = 3: sammy(2).direction = 4
-
-        CASE 18                          'crossed diagonals
-            FOR i = 0 TO 33: Wall 5 + i, 10 + i: Wall 5 + i, 11 + i: NEXT i
-            FOR i = 0 TO 31: Wall 14 + i, 68 - i: Wall 14 + i, 69 - i: NEXT i
-            sammy(1).row = 7: sammy(2).row = 46
-            sammy(1).col = 65: sammy(2).col = 15
-            sammy(1).direction = 3: sammy(2).direction = 4
-
-        CASE 19                          'fortress
-            FOR i = 18 TO 62
-                IF i < 36 OR i > 44 THEN
-                    Wall 12, i
-                    Wall 40, i
-                END IF
-            NEXT i
-            FOR i = 12 TO 40
-                IF i < 22 OR i > 30 THEN
-                    Wall i, 18
-                    Wall i, 62
-                END IF
-            NEXT i
-            FOR i = 24 TO 28: FOR j = 37 TO 42: Wall i, j: NEXT j: NEXT i
-            FOR i = 17 TO 19: FOR j = 26 TO 28: Wall i, j: Wall i, j + 26: Wall i + 17, j: Wall i + 17, j + 26: NEXT j: NEXT i
-            FOR i = 0 TO 9: Wall 5 + i, 5 + i: Wall 5 + i, 6 + i: NEXT i
-            FOR i = 0 TO 9: Wall 5 + i, 76 - i: Wall 5 + i, 77 - i: NEXT i
-            FOR i = 0 TO 9: Wall 36 + i, 14 - i: Wall 36 + i, 15 - i: NEXT i
-            FOR i = 0 TO 9: Wall 36 + i, 66 + i: Wall 36 + i, 67 + i: NEXT i
-            sammy(1).row = 7: sammy(2).row = 43
-            sammy(1).col = 65: sammy(2).col = 15
-            sammy(1).direction = 3: sammy(2).direction = 4
-
-        CASE 20                          'level 20: nested boxes
-            FOR i = 8 TO 73: Wall 10, i: Wall 43, i: NEXT i
-            FOR i = 10 TO 43: Wall i, 73: NEXT i
-            FOR i = 10 TO 23: Wall i, 8: NEXT i
-            FOR i = 30 TO 43: Wall i, 8: NEXT i
-            FOR i = 16 TO 65: Wall 16, i: Wall 37, i: NEXT i
-            FOR i = 16 TO 37: Wall i, 16: NEXT i
-            FOR i = 16 TO 23: Wall i, 65: NEXT i
-            FOR i = 30 TO 37: Wall i, 65: NEXT i
-            FOR i = 26 TO 55: Wall 31, i: NEXT i
-            FOR i = 26 TO 37: Wall 22, i: NEXT i
-            FOR i = 44 TO 55: Wall 22, i: NEXT i
-            FOR i = 22 TO 31: Wall i, 26: Wall i, 55: NEXT i
-            sammy(1).row = 7: sammy(2).row = 46
-            sammy(1).col = 65: sammy(2).col = 15
-            sammy(1).direction = 3: sammy(2).direction = 4
-
-        CASE 21                          'divided arena: divide
-            FOR i = 4 TO 49: Wall i, 39: NEXT i
-            FOR i = 4 TO 49: Wall i, 40: NEXT i
-            FOR i = 22 TO 38: Wall 16, i: NEXT i
-            FOR i = 22 TO 38: Wall 34, i: NEXT i
-            FOR i = 41 TO 57: Wall 16, i: NEXT i
-            FOR i = 41 TO 57: Wall 34, i: NEXT i
-            FOR i = 16 TO 19: FOR j = 9 TO 12: Wall i, j: NEXT j: NEXT i
-            FOR i = 26 TO 29: FOR j = 51 TO 54: Wall i, j: NEXT j: NEXT i
-            FOR i = 41 TO 44: FOR j = 56 TO 59: Wall i, j: NEXT j: NEXT i
-            FOR i = 16 TO 19: FOR j = 71 TO 74: Wall i, j: NEXT j: NEXT i
-            FOR i = 26 TO 29: FOR j = 29 TO 32: Wall i, j: NEXT j: NEXT i
-            FOR i = 26 TO 29: FOR j = 19 TO 22: Wall i, j: NEXT j: NEXT i
-            sammy(1).row = 10: sammy(2).row = 43
-            sammy(1).col = 62: sammy(2).col = 18
-            sammy(1).direction = 3: sammy(2).direction = 4
-
-        CASE 22                          'divided arena: zigzag
-            FOR i = 0 TO 11: Wall 4 + i, 46 - i: Wall 4 + i, 47 - i: NEXT i
-            FOR i = 0 TO 11: Wall 15 + i, 35 + i: Wall 15 + i, 36 + i: NEXT i
-            FOR i = 0 TO 11: Wall 26 + i, 46 - i: Wall 26 + i, 47 - i: NEXT i
-            FOR i = 0 TO 12: Wall 37 + i, 35 + i: Wall 37 + i, 36 + i: NEXT i
-            FOR i = 20 TO 23: FOR j = 12 TO 15: Wall i, j: NEXT j: NEXT i
-            FOR i = 30 TO 33: FOR j = 22 TO 25: Wall i, j: NEXT j: NEXT i
-            FOR i = 20 TO 23: FOR j = 66 TO 69: Wall i, j: NEXT j: NEXT i
-            FOR i = 30 TO 33: FOR j = 56 TO 59: Wall i, j: NEXT j: NEXT i
-            FOR i = 41 TO 44: FOR j = 66 TO 69: Wall i, j: NEXT j: NEXT i
-            FOR i = 16 TO 19: FOR j = 51 TO 54: Wall i, j: NEXT j: NEXT i
-            FOR i = 26 TO 29: FOR j = 29 TO 32: Wall i, j: NEXT j: NEXT i
-            FOR i = 36 TO 39: FOR j = 46 TO 49: Wall i, j: NEXT j: NEXT i
-            FOR i = 31 TO 34: FOR j = 66 TO 69: Wall i, j: NEXT j: NEXT i
-            FOR i = 21 TO 24: FOR j = 19 TO 22: Wall i, j: NEXT j: NEXT i
-            sammy(1).row = 10: sammy(2).row = 43
-            sammy(1).col = 62: sammy(2).col = 18
-            sammy(1).direction = 3: sammy(2).direction = 4
-
-        CASE 23                          'divided arena: bulge
-            FOR i = 4 TO 49: Wall i, 39: NEXT i
-            FOR i = 4 TO 49: Wall i, 40: NEXT i
-            FOR i = -8 TO 8: FOR j = 40 - (8 - ABS(i)) TO 41 + (8 - ABS(i)): Wall 25 + i, j: NEXT j: NEXT i
-            FOR i = 12 TO 15: FOR j = 14 TO 17: Wall i, j: NEXT j: NEXT i
-            FOR i = 36 TO 39: FOR j = 28 TO 31: Wall i, j: NEXT j: NEXT i
-            FOR i = 12 TO 15: FOR j = 60 TO 63: Wall i, j: NEXT j: NEXT i
-            FOR i = 36 TO 39: FOR j = 66 TO 69: Wall i, j: NEXT j: NEXT i
-            FOR i = 10 TO 24: Wall 20, i: NEXT i
-            FOR i = 56 TO 70: Wall 30, i: NEXT i
-            FOR i = 21 TO 24: FOR j = 61 TO 64: Wall i, j: NEXT j: NEXT i
-            FOR i = 11 TO 14: FOR j = 29 TO 32: Wall i, j: NEXT j: NEXT i
-            FOR i = 26 TO 29: FOR j = 9 TO 12: Wall i, j: NEXT j: NEXT i
-            FOR i = 16 TO 19: FOR j = 71 TO 74: Wall i, j: NEXT j: NEXT i
-            FOR i = 36 TO 39: FOR j = 51 TO 54: Wall i, j: NEXT j: NEXT i
-            sammy(1).row = 10: sammy(2).row = 43
-            sammy(1).col = 62: sammy(2).col = 18
-            sammy(1).direction = 3: sammy(2).direction = 4
-
-        CASE 24                          'divided arena: crossbars
-            FOR i = 4 TO 49: Wall i, 38: NEXT i
-            FOR i = 4 TO 49: Wall i, 39: NEXT i
-            FOR i = 4 TO 49: Wall i, 40: NEXT i
-            FOR i = 4 TO 49: Wall i, 41: NEXT i
-            FOR i = 24 TO 37: Wall 14, i: NEXT i
-            FOR i = 24 TO 37: Wall 36, i: NEXT i
-            FOR i = 42 TO 55: Wall 14, i: NEXT i
-            FOR i = 42 TO 55: Wall 36, i: NEXT i
-            FOR i = 0 TO 9: Wall 18 + i, 8 + i: Wall 18 + i, 9 + i: NEXT i
-            FOR i = 0 TO 9: Wall 18 + i, 72 - i: Wall 18 + i, 73 - i: NEXT i
-            FOR i = 24 TO 27: FOR j = 14 TO 17: Wall i, j: NEXT j: NEXT i
-            FOR i = 24 TO 27: FOR j = 64 TO 67: Wall i, j: NEXT j: NEXT i
-            FOR i = 21 TO 24: FOR j = 29 TO 32: Wall i, j: NEXT j: NEXT i
-            FOR i = 31 TO 34: FOR j = 71 TO 74: Wall i, j: NEXT j: NEXT i
-            FOR i = 21 TO 24: FOR j = 56 TO 59: Wall i, j: NEXT j: NEXT i
-            FOR i = 41 TO 44: FOR j = 66 TO 69: Wall i, j: NEXT j: NEXT i
-            FOR i = 41 TO 44: FOR j = 56 TO 59: Wall i, j: NEXT j: NEXT i
-            FOR i = 31 TO 34: FOR j = 9 TO 12: Wall i, j: NEXT j: NEXT i
-            FOR i = 41 TO 44: FOR j = 46 TO 49: Wall i, j: NEXT j: NEXT i
-            sammy(1).row = 10: sammy(2).row = 43
-            sammy(1).col = 62: sammy(2).col = 18
-            sammy(1).direction = 3: sammy(2).direction = 4
-
-        CASE ELSE                        'level 25: divided arena: citadel
-            FOR i = 4 TO 49: Wall i, 36: NEXT i
-            FOR i = 4 TO 49: Wall i, 37: NEXT i
-            FOR i = 4 TO 49: Wall i, 38: NEXT i
-            FOR i = 4 TO 49: Wall i, 39: NEXT i
-            FOR i = 4 TO 49: Wall i, 40: NEXT i
-            FOR i = 4 TO 49: Wall i, 41: NEXT i
-            FOR i = 4 TO 49: Wall i, 42: NEXT i
-            FOR i = 4 TO 49: Wall i, 43: NEXT i
-            FOR i = 10 TO 15: Wall 12, i: NEXT i
-            FOR i = 23 TO 28: Wall 12, i: NEXT i
-            FOR i = 10 TO 15: Wall 38, i: NEXT i
-            FOR i = 23 TO 28: Wall 38, i: NEXT i
-            FOR i = 12 TO 21: Wall i, 10: NEXT i
-            FOR i = 29 TO 38: Wall i, 10: NEXT i
-            FOR i = 12 TO 21: Wall i, 28: NEXT i
-            FOR i = 29 TO 38: Wall i, 28: NEXT i
-            FOR i = 52 TO 57: Wall 12, i: NEXT i
-            FOR i = 65 TO 70: Wall 12, i: NEXT i
-            FOR i = 52 TO 57: Wall 38, i: NEXT i
-            FOR i = 65 TO 70: Wall 38, i: NEXT i
-            FOR i = 12 TO 21: Wall i, 52: NEXT i
-            FOR i = 29 TO 38: Wall i, 52: NEXT i
-            FOR i = 12 TO 21: Wall i, 70: NEXT i
-            FOR i = 29 TO 38: Wall i, 70: NEXT i
-            FOR i = 22 TO 26: FOR j = 17 TO 21: Wall i, j: NEXT j: NEXT i
-            FOR i = 22 TO 26: FOR j = 58 TO 62: Wall i, j: NEXT j: NEXT i
-            FOR i = 31 TO 34: FOR j = 14 TO 17: Wall i, j: NEXT j: NEXT i
-            FOR i = 31 TO 34: FOR j = 61 TO 64: Wall i, j: NEXT j: NEXT i
-            FOR i = 6 TO 8: FOR j = 12 TO 14: Wall i, j: NEXT j: NEXT i
-            FOR i = 42 TO 44: FOR j = 54 TO 56: Wall i, j: NEXT j: NEXT i
-            FOR i = 14 TO 16: FOR j = 46 TO 48: Wall i, j: NEXT j: NEXT i
-            FOR i = 42 TO 44: FOR j = 70 TO 72: Wall i, j: NEXT j: NEXT i
-            FOR i = 6 TO 8: FOR j = 46 TO 48: Wall i, j: NEXT j: NEXT i
-            FOR i = 6 TO 8: FOR j = 70 TO 72: Wall i, j: NEXT j: NEXT i
-            FOR i = 6 TO 8: FOR j = 20 TO 22: Wall i, j: NEXT j: NEXT i
-            FOR i = 38 TO 40: FOR j = 46 TO 48: Wall i, j: NEXT j: NEXT i
-            FOR i = 26 TO 28: FOR j = 46 TO 48: Wall i, j: NEXT j: NEXT i
-            FOR i = 6 TO 8: FOR j = 28 TO 30: Wall i, j: NEXT j: NEXT i
-            sammy(1).row = 10: sammy(2).row = 43
-            sammy(1).col = 62: sammy(2).col = 18
-            sammy(1).direction = 3: sammy(2).direction = 4
-    END SELECT
+    'the level is read from the level file: divided flag, start positions, walls
+    lvRec$ = SPACE$(LEVELREC)
+    k = ((curLevel - 1) MOD numLevels) + 1
+    LoadLevelRec k, lvRec$
+    splitLevel = (ASC(MID$(lvRec$, 1, 1)) <> 0)
+    FOR a = 1 TO 2
+        sammy(a).row = ASC(MID$(lvRec$, 2 + (a - 1) * 3, 1))
+        sammy(a).col = ASC(MID$(lvRec$, 3 + (a - 1) * 3, 1))
+        sammy(a).direction = ASC(MID$(lvRec$, 4 + (a - 1) * 3, 1))
+    NEXT a
+    p = 17                                          'the 46 x 78 interior, row by row
+    FOR r = 4 TO 49
+        FOR c = 2 TO 79
+            IF ASC(MID$(lvRec$, p, 1)) <> 0 THEN Wall r, c
+            p = p + 1
+        NEXT c
+    NEXT r
     IF deferDraw THEN PollWait
 
     'set up the snakes: body behind the head, head drawn in head colour

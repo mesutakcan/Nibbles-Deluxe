@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 19
-'  2026-11-01
+'  Version 20
+'  2026-11-07
 '
 '  Written for QuickBASIC 4.5 (QB45), in two modules (NIBBLESD.BAS + NIBBLEUI.BAS).
 '  QB64-PE builds NIBBLESD_ALL.BAS, the same code merged into one file.
@@ -26,6 +26,7 @@ DECLARE FUNCTION BodyColor (a, idx)
 DECLARE FUNCTION CellBusy (rr, cc)
 DECLARE FUNCTION CleanName$ (n$, dflt$)
 DECLARE FUNCTION DoorFree (mask)
+DECLARE FUNCTION DoorsActive ()
 DECLARE FUNCTION DoorPass (row)
 DECLARE FUNCTION DoorRowOk (r)
 DECLARE FUNCTION DoorTicks (ms)
@@ -37,6 +38,9 @@ DECLARE FUNCTION GameOverScreen ()
 DECLARE FUNCTION GlyphData$ (k)
 DECLARE FUNCTION IsWallColor (c)
 DECLARE FUNCTION ItemInRect (r1, c1, r2, c2)
+DECLARE FUNCTION LevelFileInit ()
+DECLARE FUNCTION LevelBand ()
+DECLARE FUNCTION LevelNo ()
 DECLARE FUNCTION MainMenu ()
 DECLARE FUNCTION Num7$ (v&)
 DECLARE FUNCTION PointIsThere (row, col)
@@ -68,6 +72,7 @@ DECLARE SUB FontOpen ()
 DECLARE SUB Intro ()
 DECLARE SUB Level (what)
 DECLARE SUB LoadConfig ()
+DECLARE SUB LoadLevelRec (k, rec$)
 DECLARE SUB LoadGlyphs ()
 DECLARE SUB LoadHigh ()
 DECLARE SUB MineBoom (rr, cc)
@@ -107,6 +112,15 @@ CONST MAXSNAKELENGTH = 1000
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGGLYPH = 1        'character code redefined as a filled egg
 CONST MAXLIVES = 9
+'Level rules.  The levels (LevelNo 1 to numLevels, starting again at 1 in ENDLESS mode)
+'are cut into LVBANDS equal bands (see LevelBand), so the rules follow numLevels
+CONST LEVELFILE = "NIBBLES.LVL"   'the level data file (the layouts of all levels)
+CONST LVBANDS = 5         'number of level bands
+CONST PILLFIRSTBAND = 1   'first band with pills (band 0 is the first one)
+CONST DOORFIRSTBAND = 1   'first band with side doors (divided levels always have them)
+CONST PILLEGGS = 16       'one pill for every PILLEGGS eggs of a level (rounded up)
+CONST EGGSTART = 10       'eggs on a level of band 0
+CONST EGGSTEP = 3         'more eggs for every band
 CONST PILLCUT = 3         'segments a pill takes off the snake (one egg gives 3)
 CONST PILLPTS = 250       'points for a pill
 CONST DOORCAND = 4        'door rows prepared per level (one is used at a time)
@@ -161,7 +175,6 @@ DIM sammyBody(0 TO MAXSNAKELENGTH - 1, 1 TO 2) AS snakeBody
 DIM qn(1 TO 2)
 DIM pal(1 TO 18)                                   'colour table, see ApplyTheme
 DIM minTime(1 TO MAXMINE)
-DIM lvOrder(1 TO NUMLEVELS)                        'level order, easy to hard
 DIM hsName$(1 TO 10)
 DIM hsLevel(1 TO 10)
 DIM rankOf(1 TO 2)
@@ -186,21 +199,16 @@ numPlayers = 1: speedSet = 5: speedUp = TRUE
 startLevel = 1: theme = 1: soundOn = TRUE: mineMode = 4: doorsOn = TRUE
 wallStone = TRUE: endMode = 1
 
-'Level order from easy to hard (tightness, length of the routes and how
-'many places can only be reached through a narrow gap were measured).  The
-'numbers are the level definitions in the Level SUB:  1 empty arena,
-'2 centre bar, 3 two columns, 7 fence, 13 bunkers, 11 box with gates,
-'14 pinwheel, 15 diamond, 18 crossed diagonals, 4 offset bars, 12 plus sign,
-'19 fortress, 6 corridors, 9 diagonals, 16 pillars, 8 comb, 5 inner box,
-'17 serpentine, 20 nested boxes, 10 dotted columns, 21 to 25 divided arenas
-'(the doors are the only way over).
-lvOrder(1) = 1: lvOrder(2) = 2: lvOrder(3) = 3: lvOrder(4) = 7
-lvOrder(5) = 13: lvOrder(6) = 11: lvOrder(7) = 14: lvOrder(8) = 15
-lvOrder(9) = 18: lvOrder(10) = 4: lvOrder(11) = 12: lvOrder(12) = 19
-lvOrder(13) = 6: lvOrder(14) = 9: lvOrder(15) = 16: lvOrder(16) = 8
-lvOrder(17) = 5: lvOrder(18) = 17: lvOrder(19) = 20: lvOrder(20) = 10
-lvOrder(21) = 21: lvOrder(22) = 22: lvOrder(23) = 23: lvOrder(24) = 24
-lvOrder(25) = 25
+IF NOT LevelFileInit THEN
+    PRINT
+    PRINT "The level file "; LEVELFILE; " is missing or damaged."
+    PRINT "Folder searched: "; CURDIR$
+    PRINT "Put the original file into the game folder and start the game again."
+    PRINT
+    PRINT "Press any key to exit."
+    DO WHILE INKEY$ = "": LOOP
+    END
+END IF
 LoadConfig
 ApplyTheme
 LoadHigh
@@ -879,6 +887,75 @@ FUNCTION ItemInRect (r1, c1, r2, c2)
     ItemInRect = FALSE
 END FUNCTION
 
+'DoorsActive:
+'  TRUE if side doors are used on this level: always on the divided levels,
+'  otherwise when the Doors setting is ON and the level is in band DOORFIRSTBAND or later
+FUNCTION DoorsActive
+    DoorsActive = (splitLevel OR (doorsOn AND LevelBand >= DOORFIRSTBAND))
+END FUNCTION
+
+'LevelBand:
+'  Band of the level, 0 to LVBANDS - 1: the play order cut into equal parts
+FUNCTION LevelBand
+    LevelBand = ((LevelNo - 1) * LVBANDS) \ numLevels
+END FUNCTION
+
+'LevelNo:
+'  Number of the level in the play order, 1 to numLevels (curLevel keeps
+'  counting in ENDLESS mode, this number starts again at 1)
+FUNCTION LevelNo
+    LevelNo = ((curLevel - 1) MOD numLevels) + 1
+END FUNCTION
+
+'LevelFileInit:
+'  Checks the level file and gets the number of levels (numLevels);
+'  FALSE if the file is missing or does not fit
+FUNCTION LevelFileInit
+    LevelFileInit = FALSE
+    numLevels = 0
+    fileFail = FALSE
+    fileBusy = TRUE
+    OPEN LEVELFILE FOR INPUT AS #1               'fails if the file is missing
+    IF NOT fileFail THEN
+        CLOSE #1
+        OPEN LEVELFILE FOR BINARY ACCESS READ AS #1
+        IF NOT fileFail THEN
+            hd$ = SPACE$(16)
+            GET #1, 1, hd$
+            IF NOT fileFail THEN
+                n = ASC(MID$(hd$, 6, 1))
+                IF LEFT$(hd$, 4) = "NBLV" AND ASC(MID$(hd$, 5, 1)) = 1 AND n >= 1 THEN
+                    IF LOF(1) = 16& + n * CLNG(LEVELREC) THEN
+                        numLevels = n
+                        LevelFileInit = TRUE
+                    END IF
+                END IF
+            END IF
+            CLOSE #1
+        END IF
+    END IF
+    fileBusy = FALSE
+END FUNCTION
+
+'LoadLevelRec:
+'  Reads the record of level k (1 to numLevels) from the level file into rec$,
+'  which has to be LEVELREC characters long.  If the file cannot be read, an
+'  empty arena is returned.
+SUB LoadLevelRec (k, rec$)
+    fileFail = FALSE
+    fileBusy = TRUE
+    OPEN LEVELFILE FOR BINARY ACCESS READ AS #1
+    IF NOT fileFail THEN
+        GET #1, 17& + CLNG(k - 1) * LEVELREC, rec$
+        CLOSE #1
+    END IF
+    fileBusy = FALSE
+    IF fileFail THEN
+        rec$ = STRING$(LEVELREC, 0)
+        MID$(rec$, 2, 6) = CHR$(25) + CHR$(50) + CHR$(4) + CHR$(25) + CHR$(30) + CHR$(3)
+    END IF
+END SUB
+
 'LoadConfig:
 '  Reads names and menu settings from NIBBLES.CFG
 SUB LoadConfig
@@ -897,7 +974,7 @@ SUB LoadConfig
                     IF NP = 1 OR NP = 2 THEN numPlayers = NP
                     IF sp >= 1 AND sp <= 10 THEN speedSet = sp
                     speedUp = (su <> 0)
-                    IF sl >= 1 AND sl <= NUMLEVELS THEN startLevel = sl
+                    IF sl >= 1 AND sl <= numLevels THEN startLevel = sl
                     IF th >= 1 AND th <= 5 THEN theme = th
                     soundOn = (so <> 0)
                     IF mo >= 1 AND mo <= 4 THEN
@@ -1127,8 +1204,8 @@ END FUNCTION
 'PlaceEggs:
 '  Scatters the eggs of a level (not near the snakes, not on items)
 SUB PlaceEggs
-    eggTotal = 8 + curLevel
-    IF eggTotal > 25 THEN eggTotal = 25
+    eggTotal = EGGSTART + EGGSTEP * LevelBand
+    IF eggTotal > MAXEGG THEN eggTotal = MAXEGG
     eggLeft = eggTotal
     FOR e = 1 TO MAXEGG
         eggRow(e) = 0
@@ -1158,7 +1235,7 @@ END SUB
 SUB PlaceFixedMines
     fxCount = 0
     IF mineMode < 3 THEN EXIT SUB
-    want = curLevel \ 2
+    want = LevelNo \ 2
     IF want > 6 THEN want = 6
     IF want < 1 THEN EXIT SUB
     IF numPlayers = 2 THEN want = ((want + 1) \ 2) * 2
@@ -1310,7 +1387,7 @@ SUB PlayNibbles
                 AddScore a, 500
             NEXT a
             DrawHud
-            IF endMode = 1 AND curLevel >= NUMLEVELS THEN
+            IF endMode = 1 AND curLevel >= numLevels THEN
                 'the last level is done: life bonus and the end of the game
                 FOR a = 1 TO numPlayers
                     AddScore a, sammy(a).lives * 1000
@@ -1319,7 +1396,7 @@ SUB PlayNibbles
                 victory = TRUE
                 gameOver = TRUE
                 dlgBg = 2                             'dark green window
-                Dialog "ALL" + STR$(NUMLEVELS) + " LEVELS COMPLETE!", "Life bonus: 1000 per life", "Press SPACE"
+                Dialog "ALL" + STR$(numLevels) + " LEVELS COMPLETE!", "Life bonus: 1000 per life", "Press SPACE"
                 dlgBg = 0
             ELSE
                 prepWhat = NEXTLEVEL                  'the next level is built behind the message
@@ -1425,7 +1502,7 @@ END SUB
 SUB PrepareDoors
     DIM ord(0 TO 18)
     dcN = 0
-    IF NOT (doorsOn OR splitLevel) THEN EXIT SUB
+    IF NOT DoorsActive THEN EXIT SUB
     FOR i = 0 TO 18
         ord(i) = i + 3
     NEXT i
@@ -1936,7 +2013,7 @@ SUB SpawnMine
 END SUB
 
 'SpawnPill:
-'  Puts a pill on a free spot (once per level, twice on levels with more than 20 eggs)
+'  Puts a pill on a free spot (one pill for every PILLEGGS eggs of a level, none in the early levels)
 SUB SpawnPill
     FindCell r, c, found
     IF NOT found THEN EXIT SUB
@@ -1956,7 +2033,7 @@ END SUB
 SUB Tick
     tickCnt = (tickCnt + 1) AND 255
     IF (tickCnt AND 3) = 0 THEN BlinkHud
-    IF doorsOn OR splitLevel THEN DoorTick
+    IF DoorsActive THEN DoorTick
 
     'the bonus star flashes and disappears after a while
     IF bonOn THEN
@@ -2116,12 +2193,13 @@ SUB Tick
                         IF NOT bonOn THEN
                             IF INT(RND * 3) = 0 THEN SpawnBonus
                         END IF
-                        'the 1st pill comes 2 to 12 seconds after the 3rd egg; levels with more
-                        'than 20 eggs get a 2nd one after half of the eggs, once the 1st is gone
-                        pillMax = 1
-                        IF eggTotal > 20 THEN pillMax = 2
+                        'the 1st pill comes 2 to 12 seconds after the 3rd egg; a level has one
+                        'pill for every PILLEGGS eggs, the others come when 1/2, 2/3 ... of the
+                        'eggs are eaten, once the pill before is gone; no pills in the early bands
+                        pillMax = (eggTotal + PILLEGGS - 1) \ PILLEGGS
+                        IF LevelBand < PILLFIRSTBAND THEN pillMax = 0
                         IF pillCnt < pillMax AND pillWait = 0 AND NOT pillOn THEN
-                            IF pillCnt = 0 THEN need = 3 ELSE need = eggTotal \ 2
+                            IF pillCnt = 0 THEN need = 3 ELSE need = pillCnt * eggTotal \ pillMax
                             IF eggTotal - eggLeft >= need THEN
                                 pillWait = PILLDELAYMS \ (stepMs + 10) + INT(RND * (PILLDELAYRND \ (stepMs + 10))) + 1
                             END IF

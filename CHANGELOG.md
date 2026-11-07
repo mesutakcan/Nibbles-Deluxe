@@ -212,3 +212,21 @@ The changelog begins with Version 2, the first version developed here.
   on levels without fixed mines
 - Searching for a free cell for an item is more reliable on crowded levels: after 300 random
   tries every cell is checked, and nothing is placed if there is no free cell
+
+### Version 20 - 2026-11-07
+
+- The levels are no longer part of the program: they are read from a new level file, `NIBBLES.LVL`,
+  which has to be in the same folder as the game (the game shows a message with the folder it
+  searched in and ends if the file is missing). The `src` folder and every release contain it
+- The levels were reworked: the empty arena is gone, a maze was added, several arenas were
+  redesigned and the levels are in a new order (still 25 levels from easy to hard; the divided
+  levels are still 21 to 25)
+- Levels 1 to 5 are gentler: there is no pill and there are no side doors. Pills and side doors
+  start with level 6 (the divided levels 21 to 25 always have doors); the intro text says so
+- The number of eggs grows in steps: 10 eggs on levels 1 to 5, then 3 more after every five levels
+  (13, 16, 19 and 22), instead of 8 plus the level number
+- A second pill now comes on levels 16 to 25 (before: levels 13 to 25)
+- In ENDLESS mode the eggs, pills, side doors and fixed mines start again with the values of level 1
+  after level 25, while the speed keeps rising
+- The source is split a bit differently: the level layouts moved from `NIBBLEUI.BAS` to the level
+  file, so `NIBBLEUI.BAS` is much smaller

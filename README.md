@@ -20,7 +20,8 @@ The game runs in DOS / DOSBox (compiled with QuickBASIC 4.5), and also natively 
 The game is published version by version; every version has its own release. The BASIC source
 consists of two modules for QuickBASIC 4.5, always called `NIBBLESD.BAS` (the main module) and
 `NIBBLEUI.BAS`, which share the declarations in the include file `NIBBLES.BI`, and of
-`NIBBLESD_ALL.BAS`, the same code in one file for QB64-PE.
+`NIBBLESD_ALL.BAS`, the same code in one file for QB64-PE. The levels are not part of the code:
+they are read from the level file `NIBBLES.LVL`.
 
 ## Features
 
@@ -30,15 +31,15 @@ consists of two modules for QuickBASIC 4.5, always called `NIBBLESD.BAS` (the ma
 - Stone walls (grey check pattern) or plain coloured walls
 - Animated title screen with a big logo; the game pieces (egg, bonus star, mine, heart and pill)
   travel around the screen edge and blink in turn, while a cheerful opening march plays
-- Eggs to collect on every level (8 + level number, at most 25)
+- Eggs to collect on every level (10 on levels 1 to 5, then 3 more after every five levels, up to 22)
 - Eggs, hearts, bonus stars, mines and pills are drawn as filled shapes (redefined characters;
   the normal characters are used if the video card does not accept the new shapes, which is
   always the case in QB64-PE, see **Known differences in QB64-PE**)
 - The next level is built while the message box is on the screen, so you hardly ever wait
 - A heart appears at once when only one egg is left, in the corner of the arena that is farthest
   from the snakes: catch it for an extra life
-- A pill that makes the snake shorter appears once per level (twice on the levels with more than
-  20 eggs); it flashes like the bonus star and gives 250 points
+- From level 6 on, a pill that makes the snake shorter appears once per level (twice on levels 16
+  to 25); it flashes like the bonus star and gives 250 points
 - Bright snake heads; the snakes are visible before a round starts
 - Two-tone striped snake bodies, with a plain dark neck right behind the bright head, so the head
   is easy to tell from the tail
@@ -49,7 +50,7 @@ consists of two modules for QuickBASIC 4.5, always called `NIBBLESD.BAS` (the ma
   cool down) with an explosion sound
 - Three death animations, chosen at random (also played when you quit to the menu during play)
 - The egg counter in the status line blinks when only 1 or 2 eggs are left
-- Side doors: now and then the walls open on both sides; go through one and come out on the other side
+- Side doors (from level 6 on): now and then the walls open on both sides; go through one and come out on the other side
   (the door rows are worked out when a level is built, and the lanes in front of them stay free of
   items and mines)
 - Turn buffer: fast key presses are never lost, and a snake can no longer reverse into itself
@@ -64,7 +65,8 @@ consists of two modules for QuickBASIC 4.5, always called `NIBBLESD.BAS` (the ma
 - Settings and names are saved to `NIBBLES.CFG`; the high score table is saved to `NIBBLES.HI`
 - The game can end after level 25 with a victory screen and a life bonus, or go on endlessly
 - The game speed is calibrated at start-up, so it plays the same on any computer
-- 25 levels (the 10 original levels plus 15 new ones), including 5 divided arenas that can only be crossed through the side doors
+- 25 levels with different walls, among them 5 divided arenas that can only be crossed through the side doors
+- The levels are stored in a level file, `NIBBLES.LVL`, which belongs to the game
 - Runs in DOS / DOSBox and natively on Windows (32 bit and 64 bit)
 
 ![Nibbles Deluxe SS 2](docs/screenshot_2.png)
@@ -79,15 +81,16 @@ release offers these stand-alone programs:
 | `NIBBLESD.EXE` | DOS or DOSBox (compiled with QuickBASIC 4.5) |
 | `Nibbles-Deluxe-x64.exe` | Windows, 64 bit (compiled with QB64-PE) |
 | `Nibbles-Deluxe-x86.exe` | Windows, 32 bit (compiled with QB64-PE) |
+| `NIBBLES.LVL` | The level file that every version needs (keep it in the same folder as the program) |
 
-No emulator is needed for the two Windows files: download one and double-click it. On a
+No emulator is needed for the two Windows files: download one (and `NIBBLES.LVL`) and double-click it. On a
 64 bit Windows (for example Windows 11) use the x64 file; the x86 file is for 32 bit
 systems. Windows may show a SmartScreen warning for a program that is downloaded from the
 internet and is not signed; the source code of the game is in the [`src`](src) folder, and you
 can compile it yourself (see below).
 
-The BASIC source (`NIBBLESD.BAS`, `NIBBLEUI.BAS`, `NIBBLES.BI` and `NIBBLESD_ALL.BAS`) is in the
-[`src`](src) folder.
+The BASIC source (`NIBBLESD.BAS`, `NIBBLEUI.BAS`, `NIBBLES.BI` and `NIBBLESD_ALL.BAS`) and the level
+file `NIBBLES.LVL` are in the [`src`](src) folder.
 
 ## Requirements
 
@@ -101,15 +104,15 @@ The game was developed and tested with QuickBASIC 4.5 in DOSBox. The source also
 
 **The Windows EXE (QB64-PE build)**
 
-1. Download `Nibbles-Deluxe-x64.exe` (or `Nibbles-Deluxe-x86.exe`) from the Releases page.
-2. Copy it to a folder where you may write files, and start it.
+1. Download `Nibbles-Deluxe-x64.exe` (or `Nibbles-Deluxe-x86.exe`) and `NIBBLES.LVL` from the Releases page.
+2. Copy both to a folder where you may write files, and start the EXE file.
 
 The game saves `NIBBLES.CFG` and `NIBBLES.HI` in the current directory, so do not run it from
 a folder that is write-protected.
 
 **The DOS EXE**
 
-1. Copy `NIBBLESD.EXE` to a folder.
+1. Copy `NIBBLESD.EXE` and `NIBBLES.LVL` to a folder.
 2. Start it in DOS, or in DOSBox:
 
    ```
@@ -120,8 +123,9 @@ a folder that is write-protected.
 
 **The source in QB45**
 
-1. Copy `src/NIBBLESD.BAS`, `src/NIBBLEUI.BAS` and `src/NIBBLES.BI` to your QB45 folder (the
-   include file has to be in the same folder as the two modules).
+1. Copy `src/NIBBLESD.BAS`, `src/NIBBLEUI.BAS`, `src/NIBBLES.BI` and `src/NIBBLES.LVL` to your QB45
+   folder (the include file has to be in the same folder as the two modules, and the level file
+   in the folder you run the game from).
 2. Start QB45 and open `NIBBLESD.BAS`, then load the second module with **File > Load File...**
    (`NIBBLEUI.BAS`). `NIBBLESD.BAS` has to be the main module.
 3. Press **F5** to run the game.
@@ -130,7 +134,8 @@ a folder that is write-protected.
 
 **The source in QB64-PE**
 
-1. Open `src/NIBBLESD_ALL.BAS` in the QB64-PE editor (this one file holds the whole game).
+1. Open `src/NIBBLESD_ALL.BAS` in the QB64-PE editor (this one file holds the code of the whole
+   game; `NIBBLES.LVL` has to be in the same folder).
 2. Press **F5** (**Run > Start**).
 
 ## Controls
@@ -152,19 +157,20 @@ as high as its content.
 ## How to play
 
 Steer your snake and collect **all the eggs** of the level. The number of eggs is shown in
-the status line and grows with the level: 8 + the level number, at most 25. You lose a life
+the status line and grows with the level: 10 on levels 1 to 5, then 3 more after every five
+levels (13, 16, 19 and 22). You lose a life
 if your snake hits a wall, the other snake, its own tail or a mine. If both heads meet, both
 snakes die.
 
 - **Egg**: 100 points, and your snake grows by 3 pixels.
 - **Flashing star**: 500 points. It shows up now and then after you eat an egg and
   disappears after a few seconds.
-- **Pill**: shows up once per level, 2 to 12 seconds after you have eaten your third egg, on a
-  random free spot; a short alert sound tells you that it is there. It flashes like the star and
+- **Pill**: from level 6 on it shows up once per level, 2 to 12 seconds after you have eaten your
+  third egg, on a random free spot; a short alert sound tells you that it is there. It flashes like the star and
   disappears after about 10 seconds. Eating it gives 250 points and makes your snake 3 pixels
-  shorter (one egg's worth, but never shorter than the starting length). On the levels with more
-  than 20 eggs (levels 13 to 25) a second pill follows after half of the eggs are eaten, once the
-  first pill is gone.
+  shorter (one egg's worth, but never shorter than the starting length). On levels 16 to 25 (19 and
+  22 eggs) a second pill follows after half of the eggs are eaten, once the first pill is gone.
+  Levels 1 to 5 have no pill.
 - **Heart**: appears at once when only one egg is left. The places for it are prepared when the
   level is built: the free corner places of the arena that the snakes can reach. The heart shows
   up in the corner that is farthest from the nearest snake (a level without a usable corner uses
@@ -179,7 +185,7 @@ snakes die.
   wins.
 - **Speed**: gets about 7 percent faster with every level (can be switched off).
 
-**Side doors** open now and then in the left and right walls (a gap four text rows high). They
+**Side doors** (from level 6 on; levels 1 to 5 have none) open now and then in the left and right walls (a gap four text rows high). They
 blink twice as a warning, open and stay open for about 10 seconds, then blink again and close. A
 snake that enters an open door leaves the arena on the other side, like in Pac-Man. The doors
 never open in front of walls, snakes, eggs or mines, and they wait to close while a snake is still
@@ -207,37 +213,13 @@ animation is played when you quit to the menu with ESC during play; that costs n
 
 ## Levels
 
-25 levels with different walls, played from easy to hard. Ten of them are the original
-Nibbles levels, fifteen are new. The number is the play order (the **Start level** setting uses it
-too).
+25 levels with different walls, played from easy to hard. The number is the play order (the
+**Start level** setting uses it too).
 
-| Level | Walls | Origin |
-| --- | --- | --- |
-| 1 | Empty arena | original |
-| 2 | Centre bar | original |
-| 3 | Two columns | original |
-| 4 | Fence | original |
-| 5 | Bunkers: four corner pockets | new |
-| 6 | A box with four gates | new |
-| 7 | Pinwheel | new |
-| 8 | Diamond | new |
-| 9 | Crossed diagonals | new |
-| 10 | Offset bars | original |
-| 11 | A big plus sign | new |
-| 12 | Fortress | new |
-| 13 | Corridors | original |
-| 14 | Diagonals | original |
-| 15 | Pillars | new |
-| 16 | Comb | original |
-| 17 | Inner box | original |
-| 18 | Serpentine | new |
-| 19 | Nested boxes | new |
-| 20 | Dotted columns | original |
-| 21 | Divide: a wall splits the arena | new |
-| 22 | Zigzag: a zigzag wall splits the arena | new |
-| 23 | Bulge: a wall with a bulge splits the arena | new |
-| 24 | Crossbars: a thick wall with crossbars | new |
-| 25 | Citadel: a very thick wall with bunkers | new |
+| Levels | Arena |
+| --- | --- |
+| 1 to 20 | One arena for both snakes. The first levels have only a few walls, and the walls get more complex as the levels go on |
+| 21 to 25 | Divided arenas: a wall splits the arena into a left and a right half |
 
 On the **divided levels 21 to 25** a wall splits the arena into a left and a right half, and
 the side doors are the only way over. The doors work on these levels even when the **Doors**
@@ -245,7 +227,8 @@ setting is OFF, and they open much more often (every 5 to 11 seconds instead of 
 The game moves any egg that could not be reached, even through the doors, to a reachable spot.
 
 After level 25 the game ends with a victory screen (**After last level**: ENDING), or the levels
-start again (ENDLESS) and, with "Faster each level" switched on, the game keeps getting faster.
+start again (ENDLESS) with the rules of level 1 (10 eggs, no pill and no side doors until level 6
+again) and, with "Faster each level" switched on, the game keeps getting faster.
 
 ## Settings
 
@@ -270,6 +253,16 @@ the game starts.
 
 ![Nibbles Deluxe SS 3](docs/screenshot_3.png)
 
+## Files the game needs
+
+| File | Content |
+| --- | --- |
+| `NIBBLES.LVL` | The level file: the walls and the starting places of all 25 levels |
+
+The file has to be in the current directory, next to the program. It is part of the game (it is
+in the `src` folder and in every release). If it is missing or damaged, the game shows a message
+with the folder it searched in and ends.
+
 ## Files the game creates
 
 | File | Content |
@@ -286,9 +279,10 @@ an earlier version (a single score) can still be read.
 | File | Content |
 | --- | --- |
 | `NIBBLESD.BAS` | QuickBASIC 4.5, main module: game logic, sound, file access (settings and high scores) |
-| `NIBBLEUI.BAS` | QuickBASIC 4.5, second module: screens, menus, drawing helpers and the 25 level layouts |
+| `NIBBLEUI.BAS` | QuickBASIC 4.5, second module: screens, menus, drawing helpers and the level builder |
 | `NIBBLES.BI` | QuickBASIC 4.5, include file: the user defined types, the constants and the `COMMON SHARED` variables that both modules use |
 | `NIBBLESD_ALL.BAS` | QB64-PE: the code of both modules merged into one file |
+| `NIBBLES.LVL` | The level file: the layouts of all 25 levels; both the QB45 and the QB64-PE version read it |
 
 **Why two modules for QuickBASIC 4.5?** The only reason is memory. Compiled as a single file,
 the game is too big for the QuickBASIC 4.5 compiler: `BC.EXE` stops with the error
@@ -298,8 +292,8 @@ not the memory of the machine (QuickBASIC 7.1 compiles the single file without p
 source is split into two modules that are compiled separately and then linked. Both modules
 take the declarations they share (the types, the constants and the `COMMON SHARED` variables)
 from the include file `NIBBLES.BI` with `$INCLUDE`, so these are written only once; the include
-file has to be in the same folder as the modules, and all three files are needed to run or build
-the game. The QB45 editor reads `NIBBLES.BI` when a module is loaded, so after you change it,
+file has to be in the same folder as the modules, and all three files (plus the level file
+`NIBBLES.LVL`, which is needed to run the game) are needed to build the game. The QB45 editor reads `NIBBLES.BI` when a module is loaded, so after you change it,
 load the modules again.
 
 **Why one merged file for QB64-PE?** QB64-PE builds a program from a single source file; it has
@@ -391,7 +385,7 @@ that accepts QuickBASIC code and creates native Windows programs. Compile the me
    & $QB64 -c "$SRC" "-f:TargetBits=32" -o "$OUT"
    ```
 
-3. Start the new EXE file with a double-click.
+3. Copy `NIBBLES.LVL` into the same folder and start the new EXE file with a double-click.
 
 Instead of the command line you can also open `NIBBLESD_ALL.BAS` in the QB64-PE editor and use
 **Run > Make EXE Only**. The command line version is handy for building both files in one go.
@@ -403,8 +397,8 @@ See [CHANGELOG.md](CHANGELOG.md) for the version history, listed from oldest to 
 ## Credits
 
 Based on **Microsoft QBasic Nibbles**, Copyright (C) Microsoft Corporation 1990. This version
-changes and extends the original game; the original levels 1 to 10 and the basic idea of the
-game come from it.
+changes and extends the original game; the basic idea of the game and some of its
+level designs come from it.
 
 The Windows builds are made with
 [QB64 Phoenix Edition](https://github.com/QB64-Phoenix-Edition/QB64pe).

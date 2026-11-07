@@ -36,7 +36,7 @@ CONST TRUE = -1
 CONST FALSE = 0
 CONST STARTLEN = 5
 CONST NECKLEN = 2          'plain (unstriped) body parts right behind the head
-CONST NUMLEVELS = 25
+CONST LEVELREC = 3604     'size of one level record in the level file NIBBLES.LVL
 CONST MAXMINE = 3         'mines on the screen at the same time
 CONST MINECHAR = 15       'character used for a mine
 CONST MAXFIX = 8          'fixed mines per level (at most)
@@ -46,13 +46,14 @@ CONST NEXTLEVEL = 3
 
 '---- Variables shared by both modules (COMMON SHARED) -------------------------
 COMMON SHARED arena(), sammy() AS snakeType, sammyBody() AS snakeBody
-COMMON SHARED qn(), pal(), minTime(), hiName$, lvOrder(), hsName$()
+COMMON SHARED qn(), pal(), minTime(), hiName$, hsName$()
 COMMON SHARED hsLevel(), hsCount, rankOf(), hsScore() AS LONG, nm$()
-COMMON SHARED vidSeg AS LONG, highScore AS LONG, curLevel, numPlayers
+COMMON SHARED vidSeg AS LONG, highScore AS LONG, curLevel, numLevels, numPlayers
 COMMON SHARED speedSet, speedUp, startLevel, theme, soundOn, mineMode
 COMMON SHARED doorsOn, wallStone, endMode, bonOn, fxCount, heartOn
 COMMON SHARED heartDone, doorState, abortGame, victory, splitLevel
 COMMON SHARED prepWhat, spaceHit, pendingEsc, deferDraw
 COMMON SHARED eggChr, fxGone()
 COMMON SHARED pillOn, pillCnt
+COMMON SHARED dcN                 'number of prepared door rows (0 = no door on this level)
 COMMON SHARED dlgBg
