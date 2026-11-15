@@ -57,3 +57,5 @@ COMMON SHARED eggChr, fxGone()
 COMMON SHARED pillOn, pillCnt
 COMMON SHARED dcN                 'number of prepared door rows (0 = no door on this level)
 COMMON SHARED dlgBg
+COMMON SHARED unlocked            'highest level the player has unlocked (saved in NIBBLES.CFG)
+COMMON SHARED unlockAll           'hidden switch: all levels can be chosen (see CheatKey)

@@ -29,10 +29,10 @@ they are read from the level file `NIBBLES.LVL`.
 - Settings menu: players, speed, colour theme, start level, sound, mines, doors, walls, ending, player names
 - Five colour themes: Classic, Night, Forest, Ocean, Desert
 - Stone walls (grey check pattern) or plain coloured walls
-- Animated title screen with a big logo; the game pieces (egg, bonus star, mine, heart and pill)
+- Animated title screen with a big logo; the game pieces (egg, bonus star, mine, heart, pill and potion)
   travel around the screen edge and blink in turn, while a cheerful opening march plays
 - Eggs to collect on every level (10 on levels 1 to 5, then 3 more after every five levels, up to 22)
-- Eggs, hearts, bonus stars, mines and pills are drawn as filled shapes (redefined characters;
+- Eggs, hearts, bonus stars, mines, pills and potions are drawn as filled shapes (redefined characters;
   the normal characters are used if the video card does not accept the new shapes, which is
   always the case in QB64-PE, see **Known differences in QB64-PE**)
 - The next level is built while the message box is on the screen, so you hardly ever wait
@@ -40,6 +40,9 @@ they are read from the level file `NIBBLES.LVL`.
   from the snakes: catch it for an extra life
 - From level 6 on, a pill that makes the snake shorter appears once per level (twice on levels 16
   to 25); it flashes like the bonus star and gives 250 points
+- From level 6 on, a potion appears once per level: drink it and your snake is protected for 12 seconds
+  (it changes its colours and can not crash into walls, snakes or mines); a pill and a potion never
+  show up together
 - Bright snake heads; the snakes are visible before a round starts
 - Two-tone striped snake bodies, with a plain dark neck right behind the bright head, so the head
   is easy to tell from the tail
@@ -56,16 +59,18 @@ they are read from the level file `NIBBLES.LVL`.
 - Turn buffer: fast key presses are never lost, and a snake can no longer reverse into itself
 - Flashing bonus stars and a bonus for completing a level
 - Sound effects for every event: round start, eating an egg, crash, bonus star, heart, pill,
-  doors, level complete and mine explosion
+  potion, doors, level complete and mine explosion
 - Lives that really count down (the heart in the status line blinks on the last life),
   game over screen with the winner
 - Player names can be changed in the menu
 - Top 10 high score table with names, scores and levels; the live high score is shown in the
   status line during play
-- Settings and names are saved to `NIBBLES.CFG`; the high score table is saved to `NIBBLES.HI`
+- Settings, names and the unlocked levels are saved to `NIBBLES.CFG`; the high score table is saved to `NIBBLES.HI`
 - The game can end after level 25 with a victory screen and a life bonus, or go on endlessly
 - The game speed is calibrated at start-up, so it plays the same on any computer
 - 25 levels with different walls, among them 5 divided arenas that can only be crossed through the side doors
+- The levels are locked at the start: only level 1 can be chosen, and every level you complete unlocks the next one
+- When a level is complete the arena is wiped off the screen, and a new arena is revealed, with one of four random effects
 - The levels are stored in a level file, `NIBBLES.LVL`, which belongs to the game
 - Runs in DOS / DOSBox and natively on Windows (32 bit and 64 bit)
 
@@ -166,11 +171,18 @@ snakes die.
 - **Flashing star**: 500 points. It shows up now and then after you eat an egg and
   disappears after a few seconds.
 - **Pill**: from level 6 on it shows up once per level, 2 to 12 seconds after you have eaten your
-  third egg, on a random free spot; a short alert sound tells you that it is there. It flashes like the star and
+  third egg or half of the eggs (the potion takes the other of the two places), on a random free spot; a short alert sound tells you that it is there. It flashes like the star and
   disappears after about 10 seconds. Eating it gives 250 points and makes your snake 3 pixels
   shorter (one egg's worth, but never shorter than the starting length). On levels 16 to 25 (19 and
   22 eggs) a second pill follows after half of the eggs are eaten, once the first pill is gone.
   Levels 1 to 5 have no pill.
+- **Potion**: from level 6 on it shows up once per level on a random free spot, 2 to 12 seconds
+  after you have eaten your third egg or half of the eggs (the pill takes the other place); a short
+  chime tells you that it is there. It flashes and disappears after about 10 seconds. Drinking it
+  gives 150 points and a shield for 12 seconds: your snake can not crash into walls, snakes or
+  mines. While the shield works, the snake has a yellow head and a magenta body; in the last 2
+  seconds it blinks back to its normal colours, with a warning sound. A pill and a potion never
+  show up together, at least 10 seconds lie between them. Levels 1 to 5 have no potion.
 - **Heart**: appears at once when only one egg is left. The places for it are prepared when the
   level is built: the free corner places of the arena that the snakes can reach. The heart shows
   up in the corner that is farthest from the nearest snake (a level without a usable corner uses
@@ -216,6 +228,10 @@ animation is played when you quit to the menu with ESC during play; that costs n
 25 levels with different walls, played from easy to hard. The number is the play order (the
 **Start level** setting uses it too).
 
+At the start only level 1 can be chosen. Every level you complete unlocks the next one, and the
+**Start level** setting goes up to the highest unlocked level. The progress is saved in
+`NIBBLES.CFG`.
+
 | Levels | Arena |
 | --- | --- |
 | 1 to 20 | One arena for both snakes. The first levels have only a few walls, and the walls get more complex as the levels go on |
@@ -227,7 +243,7 @@ setting is OFF, and they open much more often (every 5 to 11 seconds instead of 
 The game moves any egg that could not be reached, even through the doors, to a reachable spot.
 
 After level 25 the game ends with a victory screen (**After last level**: ENDING), or the levels
-start again (ENDLESS) with the rules of level 1 (10 eggs, no pill and no side doors until level 6
+start again (ENDLESS) with the rules of level 1 (10 eggs, no pill, no potion and no side doors until level 6
 again) and, with "Faster each level" switched on, the game keeps getting faster.
 
 ## Settings
@@ -237,7 +253,7 @@ again) and, with "Faster each level" switched on, the game keeps getting faster.
 | Players | 1 or 2 |
 | Speed | 1 to 10 |
 | Faster each level | ON / OFF |
-| Start level | 1 to 25 |
+| Start level | 1 to 25 (the unlocked levels) |
 | Colors | CLASSIC, NIGHT, FOREST, OCEAN, DESERT |
 | Sound | ON / OFF |
 | Mines | OFF, RANDOM, FIXED, BOTH |
@@ -267,11 +283,11 @@ with the folder it searched in and ends.
 
 | File | Content |
 | --- | --- |
-| `NIBBLES.CFG` | The player names and all menu settings (including Doors, Walls and After last level) |
+| `NIBBLES.CFG` | The player names, all menu settings (including Doors, Walls and After last level) and the highest unlocked level |
 | `NIBBLES.HI` | The top 10 high score table (name, score, level) |
 
 Both files are written to the current directory and keep these names in every version,
-whatever the program file is called. Delete them to start fresh. A `NIBBLES.HI` file from
+whatever the program file is called. Delete them to start fresh (the levels are locked again, too). A `NIBBLES.HI` file from
 an earlier version (a single score) can still be read.
 
 ## Source files
@@ -313,8 +329,8 @@ use the compiled EXE file; running from the IDE is meant for trying and editing 
 
 ### Known differences in QB64-PE
 
-The game redefines five characters of the VGA font (the filled shapes of the egg, the heart, the
-bonus star, the mine and the pill). QuickBASIC 4.5 does this by writing to the video card's
+The game redefines six characters of the VGA font (the filled shapes of the egg, the heart, the
+bonus star, the mine, the pill and the potion). QuickBASIC 4.5 does this by writing to the video card's
 character generator memory. QB64-PE does not support this: the change does not take place and the
 standard characters are displayed instead of the redefined ones (the pill, for example, is shown
 as a club symbol). The game detects this and uses the normal characters. This is only a cosmetic

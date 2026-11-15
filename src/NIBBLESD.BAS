@@ -4,8 +4,8 @@
 '  An improved version of the classic Microsoft QBasic Nibbles (1990).
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 20
-'  2026-11-07
+'  Version 21
+'  2026-11-15
 '
 '  Written for QuickBASIC 4.5 (QB45), in two modules (NIBBLESD.BAS + NIBBLEUI.BAS).
 '  QB64-PE builds NIBBLESD_ALL.BAS, the same code merged into one file.
@@ -40,6 +40,10 @@ DECLARE FUNCTION IsWallColor (c)
 DECLARE FUNCTION ItemInRect (r1, c1, r2, c2)
 DECLARE FUNCTION LevelFileInit ()
 DECLARE FUNCTION LevelBand ()
+DECLARE FUNCTION HeadColor (a)
+DECLARE FUNCTION GapSteps ()
+DECLARE FUNCTION NeckColor (a)
+DECLARE FUNCTION RandomDelaySteps ()
 DECLARE FUNCTION LevelNo ()
 DECLARE FUNCTION MainMenu ()
 DECLARE FUNCTION Num7$ (v&)
@@ -57,6 +61,7 @@ DECLARE SUB DoorReset ()
 DECLARE SUB DoorSet (k, wallFlag)
 DECLARE SUB DoorTick ()
 DECLARE SUB Dialog (t1$, t2$, hint$)
+DECLARE FUNCTION CheatKey (k$)
 DECLARE SUB DrawCell (r, c)
 DECLARE SUB DrawHud ()
 DECLARE SUB DrawHudCenter (eggFg)
@@ -105,12 +110,17 @@ DECLARE SUB PrepareMines ()
 DECLARE SUB PutHeart (rr, cc, d)
 DECLARE SUB SpawnMine ()
 DECLARE SUB SpawnPill ()
+DECLARE SUB RecolorSnake (a)
+DECLARE SUB ResetPotion ()
+DECLARE SUB SpawnPotion ()
 DECLARE SUB Tick ()
+DECLARE SUB WipeScreen ()
 
 '---- Constants used in this module only --------------------------------------
 CONST MAXSNAKELENGTH = 1000
 CONST MAXEGG = 30         'eggs per level (at most)
 CONST EGGGLYPH = 1        'character code redefined as a filled egg
+CONST NUMGLYPHS = 6       'redefined characters: egg, heart, star, mine, pill, potion
 CONST MAXLIVES = 9
 'Level rules.  The levels (LevelNo 1 to numLevels, starting again at 1 in ENDLESS mode)
 'are cut into LVBANDS equal bands (see LevelBand), so the rules follow numLevels
@@ -142,6 +152,15 @@ CONST MINEAWAYMS = 700    'a random mine keeps this much travel time away from a
 CONST PILLMS = 10000      'a pill stays
 CONST PILLDELAYMS = 2000  'a pill comes this long after the 3rd egg, plus a random part
 CONST PILLDELAYRND = 10000
+CONST POTIONFIRSTBAND = 1  'first band with a potion (band 0 is the first one)
+CONST POTIONPTS = 150      'points for a potion
+CONST POTIONMS = 12000     'the shield of the snake that drank it lasts this long
+CONST POTIONWARNMS = 2000  'a sound warns and the snake blinks this long before the shield ends
+CONST POTIONBLINKMS = 400  'the snake blinks with this period (shield colours, then normal colours) in those last seconds
+CONST SHIELDHEAD = 14      'colour of the head while a potion shield is on
+CONST SHIELDBODY = 13      'colour of the whole body while a potion shield is on (the colour of the potion)
+CONST POTIONSHOWMS = 10000 'a potion stays
+CONST ITEMGAPMS = 10000    'a pill and a potion never show up together: this long between them
 
 '---- Global variables of this module only ------------------------------------
 'The playfield is 80 x 50 "pixels": every text character holds two pixels
@@ -153,11 +172,14 @@ DIM SHARED eggRow(1 TO MAXEGG), eggCol(1 TO MAXEGG)
 DIM SHARED fxRow(1 TO MAXFIX), fxCol(1 TO MAXFIX)     'fixed mines
 DIM SHARED bfsD(0 TO 3999), bfsQ(0 TO 3999)        'path search (one entry per pixel)
 DIM SHARED glyphsOn
-DIM SHARED gCode(1 TO 5), gNew$(1 TO 5), gOld$(1 TO 5)
+DIM SHARED gCode(1 TO NUMGLYPHS), gNew$(1 TO NUMGLYPHS), gOld$(1 TO NUMGLYPHS)
 DIM SHARED loopsPerMs AS SINGLE
 DIM SHARED bonRow, bonCol, bonTime, eggLeft, eggTotal
 DIM SHARED pillRow, pillCol, pillTime, pillWait, pillClr   'the pill (shortens the snake)
-DIM SHARED godMode, cheated                'hidden test switch (Ctrl+G) and its flag
+DIM SHARED potOn, potDone, potRow, potCol, potTime, potClr   'the potion (a shield for a while); one per level
+DIM SHARED potImm(1 TO 2), potShown(1 TO 2), potWarn       'steps of shield left per snake; snake drawn in shield colours; steps of the warning
+DIM SHARED potDue, potWait, potEarly, itemGap              'the potion is due (waits for a free moment), its delay; potion before the pill (random); gap after a pill or potion
+DIM SHARED godMode, cheated, cheatArm      'hidden test switches (see CheatKey) and the flag
 DIM SHARED heartRow, heartCol, heartTime, heartMax, tickCnt
 DIM SHARED hcN, hcRow(1 TO 4), hcCol(1 TO 4), hcRat(1 TO 4)   'heart places near the corners; hcRat = path / straight line (x16)
 DIM SHARED bfsFresh                        'TRUE while bfsD holds the result for the arena just built
@@ -197,6 +219,7 @@ DEF SEG
 nm$(1) = "SAMMY": nm$(2) = "JAKE"
 numPlayers = 1: speedSet = 5: speedUp = TRUE
 startLevel = 1: theme = 1: soundOn = TRUE: mineMode = 4: doorsOn = TRUE
+unlocked = 1
 wallStone = TRUE: endMode = 1
 
 IF NOT LevelFileInit THEN
@@ -224,14 +247,20 @@ Calibrate
 Intro
 quitAll = FALSE
 DO
+    cheatArm = FALSE
     startIt = MainMenu
     SaveConfig
     IF NOT startIt THEN EXIT DO
     ApplyTheme
     DO
         PlayNibbles
-        IF abortGame THEN EXIT DO
+        lv = LevelNo                              'the menu shows the level you left or died on
+        IF abortGame THEN
+            IF unlockAll OR lv <= unlocked THEN startLevel = lv
+            EXIT DO
+        END IF
         choice = GameOverScreen
+        IF choice = 2 AND (unlockAll OR lv <= unlocked) THEN startLevel = lv
         IF choice = 3 THEN quitAll = TRUE
     LOOP WHILE choice = 1
 LOOP UNTIL quitAll
@@ -310,7 +339,13 @@ END SUB
 'BodyColor:
 '  Body colour of a snake segment: two shades alternate along the body
 FUNCTION BodyColor (a, idx)
-    IF idx AND 1 THEN BodyColor = pal(a) ELSE BodyColor = pal(12 + a)
+    IF potShown(a) THEN
+        BodyColor = SHIELDBODY                  'shield colour: no stripes
+    ELSEIF idx AND 1 THEN
+        BodyColor = pal(a)
+    ELSE
+        BodyColor = pal(12 + a)
+    END IF
 END FUNCTION
 
 'Calibrate:
@@ -337,7 +372,7 @@ SUB Calibrate
 END SUB
 
 'CellBusy:
-'  TRUE if an item (egg, bonus, heart, pill, mine) already sits on the text cell
+'  TRUE if an item (egg, bonus, heart, pill, potion, mine) already sits on the text cell
 FUNCTION CellBusy (rr, cc)
     CellBusy = TRUE
     FOR e = 1 TO MAXEGG
@@ -351,6 +386,9 @@ FUNCTION CellBusy (rr, cc)
     END IF
     IF pillOn THEN
         IF pillRow = rr AND pillCol = cc THEN EXIT FUNCTION
+    END IF
+    IF potOn THEN
+        IF potRow = rr AND potCol = cc THEN EXIT FUNCTION
     END IF
     FOR m = 1 TO MAXMINE
         IF minTime(m) > 0 THEN
@@ -720,13 +758,14 @@ SUB HudShow (c1, c2)
 END SUB
 
 'DrawItems:
-'  Draws the eggs, the bonus star, the pill, the heart and the mines
+'  Draws the eggs, the bonus star, the pill, the potion, the heart and the mines
 SUB DrawItems
     FOR e = 1 TO MAXEGG
         IF eggRow(e) > 0 THEN PutChar eggRow(e), eggCol(e), eggChr, pal(9) + pal(4) * 16
     NEXT e
     IF bonOn THEN PutChar bonRow, bonCol, 4, pal(10) + pal(4) * 16
     IF pillOn THEN PutChar pillRow, pillCol, 5, pillClr + pal(4) * 16
+    IF potOn THEN PutChar potRow, potCol, 6, potClr + pal(4) * 16
     IF heartOn THEN
         hc = 12
         PutChar heartRow, heartCol, 3, hc + pal(4) * 16
@@ -837,31 +876,27 @@ SUB FontOpen
 END SUB
 
 'GlyphData$:
-'  Shape (16 lines of 8 pixels) of special character number k:
-'  1 egg (character 1), 2 heart (3), 3 star (4), 4 mine (15), 5 pill (5)
+'  Shape of special character number k: 16 lines of 8 pixels, each line is two
+'  hex digits.  1 egg (character 1), 2 heart (3), 3 star (4), 4 mine (15), 5 pill (5),
+'  6 potion (6)
 FUNCTION GlyphData$ (k)
     SELECT CASE k
-        CASE 1
-            g$ = CHR$(0) + CHR$(0) + CHR$(24) + CHR$(60) + CHR$(60) + CHR$(126) + CHR$(126) + CHR$(255)
-            g$ = g$ + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(126) + CHR$(126) + CHR$(60) + CHR$(24) + CHR$(0)
-        CASE 2
-            g$ = CHR$(0) + CHR$(0) + CHR$(102) + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(126)
-            g$ = g$ + CHR$(126) + CHR$(60) + CHR$(60) + CHR$(24) + CHR$(0) + CHR$(0) + CHR$(0) + CHR$(0)
-        CASE 3
-            g$ = CHR$(0) + CHR$(24) + CHR$(24) + CHR$(66) + CHR$(36) + CHR$(24) + CHR$(165) + CHR$(90)
-            g$ = g$ + CHR$(90) + CHR$(165) + CHR$(24) + CHR$(36) + CHR$(66) + CHR$(24) + CHR$(24) + CHR$(0)
-        CASE 5
-            g$ = CHR$(0) + CHR$(0) + CHR$(60) + CHR$(126) + CHR$(126) + CHR$(126) + CHR$(126) + CHR$(126)
-            g$ = g$ + CHR$(0) + CHR$(126) + CHR$(126) + CHR$(126) + CHR$(126) + CHR$(126) + CHR$(60) + CHR$(0)
-        CASE ELSE
-            g$ = CHR$(0) + CHR$(0) + CHR$(3) + CHR$(4) + CHR$(8) + CHR$(8) + CHR$(60) + CHR$(126)
-            g$ = g$ + CHR$(223) + CHR$(255) + CHR$(255) + CHR$(255) + CHR$(126) + CHR$(60) + CHR$(0) + CHR$(0)
+        CASE 1: h$ = "0000183C3C7E7EFFFFFFFF7E7E3C1800"   'egg
+        CASE 2: h$ = "000066FFFFFFFF7E7E3C3C1800000000"   'heart
+        CASE 3: h$ = "0000005A243CE75A5AE73C245A000000"   'star
+        CASE 4: h$ = "0000030408083C7EDFFFFFFF7E3C0000"   'mine
+        CASE 5: h$ = "00003C7E7E7E7E7E007E7E7E7E7E3C00"   'pill
+        CASE 6: h$ = "003C1818183C7EDFBFBFFFFFFF7E3C00"   'potion
     END SELECT
+    g$ = ""
+    FOR i = 1 TO 31 STEP 2
+        g$ = g$ + CHR$(VAL("&H" + MID$(h$, i, 2)))
+    NEXT i
     GlyphData$ = g$
 END FUNCTION
 
 'ItemInRect:
-'  TRUE if an egg, bonus, heart, pill or mine sits inside the text cell rectangle
+'  TRUE if an egg, bonus, heart, pill, potion or mine sits inside the text cell rectangle
 FUNCTION ItemInRect (r1, c1, r2, c2)
     ItemInRect = TRUE
     FOR e = 1 TO eggTotal
@@ -875,6 +910,9 @@ FUNCTION ItemInRect (r1, c1, r2, c2)
     END IF
     IF pillOn THEN
         IF pillRow >= r1 AND pillRow <= r2 AND pillCol >= c1 AND pillCol <= c2 THEN EXIT FUNCTION
+    END IF
+    IF potOn THEN
+        IF potRow >= r1 AND potRow <= r2 AND potCol >= c1 AND potCol <= c2 THEN EXIT FUNCTION
     END IF
     FOR m = 1 TO MAXMINE
         IF minTime(m) > 0 THEN
@@ -995,6 +1033,13 @@ SUB LoadConfig
                             IF em = 2 THEN endMode = 2 ELSE endMode = 1
                         END IF
                     END IF
+                    IF NOT EOF(1) THEN
+                        INPUT #1, ul
+                        IF NOT fileFail THEN
+                            IF ul >= 1 AND ul <= numLevels THEN unlocked = ul
+                        END IF
+                    END IF
+                    IF startLevel > unlocked THEN startLevel = unlocked     'that level is still locked
                 END IF
             END IF
             CLOSE #1
@@ -1004,20 +1049,20 @@ SUB LoadConfig
 END SUB
 
 'LoadGlyphs:
-'  Redefines the characters of the egg, heart, star, mine and pill as filled
+'  Redefines the characters of the egg, heart, star, mine, pill and potion as filled
 '  shapes (8 x 16 pixels).  Everything is read back; if the video card does
 '  not accept the new shapes the old ones are put back and the normal
 '  characters (hollow circle for the egg) stay in use.
 SUB LoadGlyphs
     IF vidSeg <> &HB800& THEN EXIT SUB
-    gCode(1) = EGGGLYPH: gCode(2) = 3: gCode(3) = 4: gCode(4) = 15: gCode(5) = 5
-    FOR k = 1 TO 5
+    gCode(1) = EGGGLYPH: gCode(2) = 3: gCode(3) = 4: gCode(4) = 15: gCode(5) = 5: gCode(6) = 6
+    FOR k = 1 TO NUMGLYPHS
         gNew$(k) = GlyphData$(k)
     NEXT k
     ok = TRUE
     FontOpen
     DEF SEG = &HA000&
-    FOR k = 1 TO 5
+    FOR k = 1 TO NUMGLYPHS
         ofs = gCode(k) * 32
         old$ = ""
         FOR i = 0 TO 15
@@ -1032,7 +1077,7 @@ SUB LoadGlyphs
         NEXT i
     NEXT k
     IF NOT ok THEN
-        FOR k = 1 TO 5
+        FOR k = 1 TO NUMGLYPHS
             ofs = gCode(k) * 32
             FOR i = 0 TO 15
                 POKE ofs + i, ASC(MID$(gOld$(k), i + 1, 1))
@@ -1283,8 +1328,9 @@ SUB PlayNibbles
     rankOf(1) = 0
     rankOf(2) = 0
     tickCnt = 0
-    godMode = FALSE
-    cheated = FALSE
+    ResetPotion                               'no potion of an earlier game
+    cheatArm = FALSE                          'a Ctrl+Z from the menu does not eat the first key
+    cheated = godMode                         'immortality switched on in the menu stays on (and blocks the high score)
     FOR m = 1 TO MAXFIX
         fxGone(m) = FALSE
     NEXT m
@@ -1346,6 +1392,7 @@ SUB PlayNibbles
             bonOn = FALSE
             pillOn = FALSE
             pillWait = 0
+            ResetPotion
             heartOn = FALSE
             FOR m = 1 TO MAXMINE
                 minTime(m) = 0
@@ -1387,6 +1434,15 @@ SUB PlayNibbles
                 AddScore a, 500
             NEXT a
             DrawHud
+            IF NOT cheated AND NOT unlockAll THEN         'unlock the next level (cheats do not count)
+                IF curLevel < numLevels AND curLevel >= unlocked THEN
+                    unlocked = curLevel + 1
+                    SaveConfig
+                END IF
+            END IF
+            ResetPotion                                   'no potion or shield goes into the next level
+            DelayMs 500                                   'a moment to look at the finished arena
+            WipeScreen                                    'the finished arena is wiped off the screen
             IF endMode = 1 AND curLevel >= numLevels THEN
                 'the last level is done: life bonus and the end of the game
                 FOR a = 1 TO numPlayers
@@ -1633,12 +1689,49 @@ SUB QueueTurn (who, d)
     END IF
 END SUB
 
+'CheatKey:
+'  Hidden test switches, the same in the menu and in the game.  Ctrl+Z arms
+'  them, the next key chooses: G = immortality, K = all levels unlocked
+'  (both switch on and off, a rising or falling tune tells which).  Any
+'  other key just cancels and works as usual.  Returns TRUE when the key was used up here.
+FUNCTION CheatKey (k$)
+    CheatKey = FALSE
+    flag = FALSE
+    IF cheatArm THEN
+        cheatArm = FALSE
+        SELECT CASE UCASE$(k$)
+            CASE "G"
+                godMode = NOT godMode
+                IF godMode THEN cheated = TRUE
+                which = godMode
+                flag = TRUE
+            CASE "K"
+                unlockAll = NOT unlockAll
+                which = unlockAll
+                flag = TRUE
+            CASE CHR$(26)
+                cheatArm = TRUE                   'Ctrl+Z again: still armed
+                CheatKey = TRUE
+        END SELECT
+        IF flag THEN
+            CheatKey = TRUE
+            IF soundOn THEN
+                IF which THEN PLAY "MBMNT255O4L64CEG" ELSE PLAY "MBMNT255O4L64GEC"
+            END IF
+        END IF
+    ELSEIF k$ = CHR$(26) THEN
+        cheatArm = TRUE
+        CheatKey = TRUE
+    END IF
+END FUNCTION
+
 'ReadKeys:
 '  Reads all waiting keys: steering, pause and quit
 SUB ReadKeys
     DO
         k$ = INKEY$
         IF k$ = "" THEN EXIT DO
+        IF CheatKey(k$) THEN k$ = ""             'hidden switches use up their keys
         SELECT CASE k$
             CASE CHR$(0) + "H", "8"
                 QueueTurn 1, 1
@@ -1659,12 +1752,6 @@ SUB ReadKeys
             CASE "p", "P"
                 Dialog "G A M E   P A U S E D", "", "Press SPACE to continue"
                 IF abortGame THEN EXIT DO
-            CASE CHR$(7)                             'Ctrl+G: hidden immortality switch (test only)
-                godMode = NOT godMode
-                IF godMode THEN cheated = TRUE
-                IF soundOn THEN
-                    IF godMode THEN PLAY "MBMNT255O4L64CEG" ELSE PLAY "MBMNT255O4L64GEC"
-                END IF
             CASE CHR$(27)
                 IF AskYesNo("Quit to the menu?") THEN
                     variant = INT(RND * 3) + 1         'the living snakes die, no life is lost
@@ -1713,7 +1800,7 @@ SUB RestoreGlyphs
     IF NOT glyphsOn THEN EXIT SUB
     FontOpen
     DEF SEG = &HA000&
-    FOR k = 1 TO 5
+    FOR k = 1 TO NUMGLYPHS
         ofs = gCode(k) * 32
         FOR i = 0 TO 15
             POKE ofs + i, ASC(MID$(gOld$(k), i + 1, 1))
@@ -1814,6 +1901,7 @@ SUB SaveConfig
         WRITE #1, nm$(1), nm$(2), numPlayers, speedSet, speedUp, startLevel, theme, soundOn, mineMode
         WRITE #1, doorsOn
         WRITE #1, wallStone, endMode
+        WRITE #1, unlocked
         CLOSE #1
     END IF
     fileBusy = FALSE
@@ -1851,6 +1939,9 @@ SUB Sfx (n)
         CASE 10: PLAY "MBT255MSL64O1GFEDCO0BAGFEDCP64O2GFEDCO1BAGFEDC" 'mine explosion
         CASE 11: PLAY "MBMNT250O4L32CO3BB-AA-GG-FEL16C"   'pill eaten (chromatic slide down)
         CASE 12: PLAY "MBMNT220O4L32GEGEGE"                'pill appears (short trill)
+        CASE 13: PLAY "MBMNT230O3L32CEGB>CEG"              'potion appears (rising chime)
+        CASE 14: PLAY "MBMNT255O3L32CGCGO4CEGL16>C"        'potion drunk (power up)
+        CASE 15: PLAY "MBMNT190O4L16ECO3GE"                'shield about to end (falling warning)
     END SELECT
 END SUB
 
@@ -2012,6 +2103,75 @@ SUB SpawnMine
     NEXT attempt
 END SUB
 
+'RandomDelaySteps:
+'  Random waiting time of a pill or a potion (2 to 12 seconds) in steps of the game
+FUNCTION RandomDelaySteps
+    RandomDelaySteps = PILLDELAYMS \ (stepMs + 10) + INT(RND * (PILLDELAYRND \ (stepMs + 10))) + 1
+END FUNCTION
+
+'GapSteps:
+'  The gap between a pill and a potion, in steps of the game
+FUNCTION GapSteps
+    GapSteps = ITEMGAPMS \ (stepMs + 10)
+END FUNCTION
+
+'ResetPotion:
+'  Clears the potion, the shields and the waiting times: at the start of every
+'  round, after a crash and when a level is complete.  It also decides at random
+'  whether the potion or the first pill comes first on this level
+SUB ResetPotion
+    potOn = FALSE
+    potDone = FALSE
+    potDue = FALSE
+    potWait = 0
+    itemGap = 0
+    potImm(1) = 0
+    potImm(2) = 0
+    potShown(1) = FALSE
+    potShown(2) = FALSE
+    potEarly = (INT(RND * 2) = 0)
+END SUB
+
+'HeadColor:
+'  Colour of the head of snake a: the shield head colour while the snake is drawn in its shield colours
+FUNCTION HeadColor (a)
+    IF potShown(a) THEN HeadColor = SHIELDHEAD ELSE HeadColor = pal(6 + a)
+END FUNCTION
+
+'NeckColor:
+'  Colour of the two plain parts behind the head (the shield colour of the body while it is on)
+FUNCTION NeckColor (a)
+    IF potShown(a) THEN NeckColor = SHIELDBODY ELSE NeckColor = pal(12 + a)
+END FUNCTION
+
+'RecolorSnake:
+'  Draws the whole snake a again, in its shield colours (SHIELDHEAD head, one SHIELDBODY
+'  body colour) or in its normal colours, as potShown(a) says.  Used when the shield
+'  starts and ends and for every blink in its last seconds
+SUB RecolorSnake (a)
+    hd = sammy(a).head
+    PutPixel sammyBody(hd, a).row, sammyBody(hd, a).col, HeadColor(a)
+    FOR k = 1 TO sammy(a).count - 1
+        idx = (hd - k + MAXSNAKELENGTH) MOD MAXSNAKELENGTH
+        IF k <= NECKLEN THEN px = NeckColor(a) ELSE px = BodyColor(a, idx)
+        PutPixel sammyBody(idx, a).row, sammyBody(idx, a).col, px
+    NEXT k
+END SUB
+
+'SpawnPotion:
+'  Puts the potion of the level on a free spot (it became due when half of the eggs were eaten)
+SUB SpawnPotion
+    FindCell r, c, found
+    IF NOT found THEN EXIT SUB
+    potRow = r
+    potCol = c
+    potClr = 13
+    potOn = TRUE
+    potTime = POTIONSHOWMS \ (stepMs + 10)
+    PutChar potRow, potCol, 6, potClr + pal(4) * 16
+    Sfx 13
+END SUB
+
 'SpawnPill:
 '  Puts a pill on a free spot (one pill for every PILLEGGS eggs of a level, none in the early levels)
 SUB SpawnPill
@@ -2048,20 +2208,68 @@ SUB Tick
     END IF
 
     'the pill: wait for its random moment, then it flashes like the star
+    IF itemGap > 0 THEN itemGap = itemGap - 1
     IF pillWait > 0 THEN
-        pillWait = pillWait - 1
-        IF pillWait = 0 THEN SpawnPill
+        IF pillWait > 1 OR (NOT potOn AND itemGap = 0) THEN   'never together with a potion
+            pillWait = pillWait - 1
+            IF pillWait = 0 THEN SpawnPill
+        END IF
     END IF
     IF pillOn THEN
         pillTime = pillTime - 1
         IF pillTime <= 0 THEN
             pillOn = FALSE
+            itemGap = GapSteps
             DrawCell pillRow, pillCol
         ELSEIF (pillTime AND 3) = 0 THEN
             IF (pillTime AND 4) = 0 THEN fc = pillClr ELSE fc = 15
             PutChar pillRow, pillCol, 5, fc + pal(4) * 16
         END IF
     END IF
+
+    'the potion waits for its random moment, then it is due: it shows up when no pill is on the screen
+    'or coming, and a while after the last one
+    IF potWait > 0 THEN
+        potWait = potWait - 1
+        IF potWait = 0 THEN potDue = TRUE
+    END IF
+    IF potDue THEN
+        IF NOT potOn AND NOT pillOn AND pillWait = 0 AND itemGap = 0 THEN
+            potDue = FALSE
+            SpawnPotion
+        END IF
+    END IF
+
+    'the potion flashes like the pill and disappears after a while
+    IF potOn THEN
+        potTime = potTime - 1
+        IF potTime <= 0 THEN
+            potOn = FALSE
+            itemGap = GapSteps
+            DrawCell potRow, potCol
+        ELSEIF (potTime AND 3) = 0 THEN
+            IF (potTime AND 4) = 0 THEN fc = potClr ELSE fc = 15
+            PutChar potRow, potCol, 6, fc + pal(4) * 16
+        END IF
+    END IF
+
+    'the shield of a snake runs out: a warning sound and a blinking snake (shield colours, then
+    'normal colours) shortly before the end
+    potWarn = POTIONWARNMS \ (stepMs + 10)
+    pb = POTIONBLINKMS \ (stepMs + 10)
+    IF pb < 1 THEN pb = 1
+    FOR a = 1 TO numPlayers
+        IF potImm(a) > 0 THEN
+            potImm(a) = potImm(a) - 1
+            IF potImm(a) = potWarn THEN Sfx 15
+        END IF
+        want = (potImm(a) > 0)
+        IF want AND potImm(a) <= potWarn THEN want = (((potImm(a) \ pb) AND 1) = 0)
+        IF want <> potShown(a) THEN
+            potShown(a) = want
+            RecolorSnake a
+        END IF
+    NEXT a
 
     'mines stay steady and disappear after a while
     FOR m = 1 TO MAXMINE
@@ -2119,6 +2327,7 @@ SUB Tick
     FOR a = 1 TO numPlayers
         r = sammy(a).row
         c = sammy(a).col
+        imm = godMode OR (potImm(a) > 0)         'immortal: the hidden switch or a potion shield
         dead = PointIsThere(r, c)
         IF numPlayers = 2 THEN
             IF sammy(1).row = sammy(2).row AND sammy(1).col = sammy(2).col THEN dead = TRUE
@@ -2126,7 +2335,7 @@ SUB Tick
         rr = (r + 1) \ 2
         FOR m = 1 TO MAXMINE
             IF minTime(m) > 0 THEN
-                IF minRow(m) = rr AND minCol(m) = c AND NOT godMode THEN
+                IF minRow(m) = rr AND minCol(m) = c AND NOT imm THEN
                     dead = TRUE
                     hitMine(a) = TRUE
                     mineHitRow(a) = rr
@@ -2137,7 +2346,7 @@ SUB Tick
             END IF
         NEXT m
         FOR m = 1 TO fxCount
-            IF fxRow(m) = rr AND fxCol(m) = c AND NOT godMode THEN
+            IF fxRow(m) = rr AND fxCol(m) = c AND NOT imm THEN
                 dead = TRUE
                 hitMine(a) = TRUE
                 mineHitRow(a) = rr
@@ -2146,7 +2355,7 @@ SUB Tick
         NEXT m
 
         IF dead THEN
-            IF godMode THEN
+            IF imm THEN
                 'immortal: the snake stays on its cell until the player turns
                 hd = sammy(a).head
                 sammy(a).row = sammyBody(hd, a).row
@@ -2158,7 +2367,7 @@ SUB Tick
         ELSE
             'old head becomes body: the parts right behind the head are dark and plain
             hd = sammy(a).head
-            PutPixel sammyBody(hd, a).row, sammyBody(hd, a).col, pal(12 + a)
+            PutPixel sammyBody(hd, a).row, sammyBody(hd, a).col, NeckColor(a)
             IF sammy(a).count > NECKLEN THEN
                 nk = (hd - NECKLEN + MAXSNAKELENGTH) MOD MAXSNAKELENGTH
                 PutPixel sammyBody(nk, a).row, sammyBody(nk, a).col, BodyColor(a, nk)
@@ -2169,7 +2378,7 @@ SUB Tick
             sammyBody(hd, a).row = r
             sammyBody(hd, a).col = c
             sammy(a).count = sammy(a).count + 1
-            PutPixel r, c, pal(6 + a)
+            PutPixel r, c, HeadColor(a)
             'erase the tail when the snake is long enough
             IF sammy(a).count > sammy(a).length THEN
                 tl = (hd - sammy(a).count + 1 + MAXSNAKELENGTH) MOD MAXSNAKELENGTH
@@ -2193,15 +2402,30 @@ SUB Tick
                         IF NOT bonOn THEN
                             IF INT(RND * 3) = 0 THEN SpawnBonus
                         END IF
-                        'the 1st pill comes 2 to 12 seconds after the 3rd egg; a level has one
-                        'pill for every PILLEGGS eggs, the others come when 1/2, 2/3 ... of the
-                        'eggs are eaten, once the pill before is gone; no pills in the early bands
+                        'the 1st pill comes 2 to 12 seconds after the 3rd egg or after half of the eggs
+                        '(the potion has the other place, picked at random); a level has one pill for
+                        'every PILLEGGS eggs, the others come when 1/2, 2/3 ... of the eggs are eaten,
+                        'once the pill before is gone; no pills in the early bands
                         pillMax = (eggTotal + PILLEGGS - 1) \ PILLEGGS
                         IF LevelBand < PILLFIRSTBAND THEN pillMax = 0
                         IF pillCnt < pillMax AND pillWait = 0 AND NOT pillOn THEN
-                            IF pillCnt = 0 THEN need = 3 ELSE need = pillCnt * eggTotal \ pillMax
+                            IF pillCnt > 0 THEN
+                                need = pillCnt * eggTotal \ pillMax
+                            ELSEIF potEarly THEN
+                                need = (eggTotal + 1) \ 2             'the potion has the early place on this level
+                            ELSE
+                                need = 3
+                            END IF
                             IF eggTotal - eggLeft >= need THEN
-                                pillWait = PILLDELAYMS \ (stepMs + 10) + INT(RND * (PILLDELAYRND \ (stepMs + 10))) + 1
+                                pillWait = RandomDelaySteps
+                            END IF
+                        END IF
+                        'the potion comes after the 3rd egg or after half of the eggs (random, the pill takes the other place), see Tick
+                        IF LevelBand >= POTIONFIRSTBAND AND NOT potDone THEN
+                            IF potEarly THEN pn = 3 ELSE pn = (eggTotal + 1) \ 2
+                            IF eggTotal - eggLeft >= pn THEN
+                                potDone = TRUE
+                                potWait = RandomDelaySteps
                             END IF
                         END IF
                         IF mineMode = 2 OR mineMode = 4 THEN
@@ -2232,9 +2456,22 @@ SUB Tick
             IF pillOn THEN
                 IF pillRow = rr AND pillCol = c THEN
                     pillOn = FALSE
+                    itemGap = GapSteps
                     ShrinkSnake a, PILLCUT
                     AddScore a, PILLPTS
                     Sfx 11
+                    DrawHud
+                END IF
+            END IF
+            IF potOn THEN
+                IF potRow = rr AND potCol = c THEN
+                    potOn = FALSE
+                    itemGap = GapSteps
+                    potImm(a) = POTIONMS \ (stepMs + 10)
+                    potShown(a) = TRUE
+                    RecolorSnake a
+                    AddScore a, POTIONPTS
+                    Sfx 14
                     DrawHud
                 END IF
             END IF

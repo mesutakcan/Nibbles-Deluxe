@@ -230,3 +230,24 @@ The changelog begins with Version 2, the first version developed here.
   after level 25, while the speed keeps rising
 - The source is split a bit differently: the level layouts moved from `NIBBLEUI.BAS` to the level
   file, so `NIBBLEUI.BAS` is much smaller
+
+### Version 21 - 2026-11-15
+
+- Levels are locked at the start: only level 1 can be chosen. Completing a level unlocks the
+  next one. The **Start level** setting goes up to the highest unlocked level (the menu shows
+  how many levels are open) and the progress is saved in `NIBBLES.CFG`; an older `NIBBLES.CFG`
+  starts with level 1 only
+- The **Start level** setting shows the level you were on when you quit to the menu with ESC or
+  choose MENU on the game over screen
+- New **potion**: from level 6 on, a flashing potion shows up once per level, 2 to 12 seconds
+  after the third egg or after half of the eggs are eaten (picked at random; the pill takes the
+  other place). Drinking it gives 150 points and a shield for 12 seconds: the snake can not
+  crash into walls, snakes or mines. The shielded snake has a yellow head and a one-colour
+  magenta body; in the last 2 seconds it blinks back to its normal colours, with a warning sound
+- A pill and a potion never show up together: at least 10 seconds lie between them
+- New screen effects: the finished arena is wiped off the screen when a level is complete and the
+  next arena is revealed, each with one of four effects picked at random (sweeps from the left,
+  right, top or bottom, curtains that open from the middle column or row)
+- The "PLEASE WAIT" message box is magenta and two lines high
+- The bonus star has a new shape
+- The title screen animation and the intro text show the potion

@@ -5,8 +5,8 @@
 '  level builder (the layouts come from NIBBLES.LVL).  The main module is NIBBLESD.BAS.
 '
 '  https://github.com/mesutakcan/Nibbles-Deluxe
-'  Version 20
-'  2026-11-07
+'  Version 21
+'  2026-11-15
 '
 '  Build: both modules are compiled with BC and linked together.
 '  For detailed information, please refer to the README.md file.
@@ -23,11 +23,13 @@ DEFINT A-Z
 DECLARE FUNCTION AskYesNo (msg$)
 DECLARE FUNCTION BannerRow$ (i)
 DECLARE FUNCTION BodyColor (a, idx)
+DECLARE FUNCTION CheatKey (k$)
 DECLARE FUNCTION CleanName$ (n$, dflt$)
 DECLARE FUNCTION EggsReachable ()
 DECLARE FUNCTION WallColor (row, col)
 DECLARE FUNCTION GameOverScreen ()
 DECLARE FUNCTION IsWallColor (c)
+DECLARE FUNCTION LevelLimit ()
 DECLARE FUNCTION MainMenu ()
 DECLARE FUNCTION Num7$ (v&)
 DECLARE SUB ApplyTheme ()
@@ -36,6 +38,10 @@ DECLARE SUB Center (row, text$, attr)
 DECLARE SUB ChangeSetting (sel, d)
 DECLARE SUB ClearScreen (attr)
 DECLARE SUB DelayMs (ms)
+DECLARE SUB DrawCell (r, c)
+DECLARE SUB FxEdge (byRow, k)
+DECLARE SUB FxLine (byRow, k, show)
+DECLARE SUB ScreenFx (show)
 DECLARE SUB Dialog (t1$, t2$, hint$)
 DECLARE SUB DrawBanner (row, phase, withShadow)
 DECLARE SUB DrawBox (r1, c1, r2, c2, attr)
@@ -54,6 +60,7 @@ DECLARE SUB PlaceFixedMines ()
 DECLARE SUB PutChar (row, col, ch, attr)
 DECLARE SUB PutStr (row, col, s$, attr)
 DECLARE SUB RedrawRows (r1, r2)
+DECLARE SUB RevealArena ()
 DECLARE SUB RunBfs (useDoors)
 DECLARE SUB FixEggs ()
 DECLARE SUB PollWait ()
@@ -65,9 +72,11 @@ DECLARE SUB ShowScores ()
 DECLARE SUB ShowWait ()
 DECLARE SUB SparklePause ()
 DECLARE SUB Wall (row, col)
+DECLARE SUB WipeScreen ()
 
 '---- Constants used in this module only --------------------------------------
-CONST VERSIONTXT = "VERSION 20"   'shown on the title screen
+CONST VERSIONTXT = "VERSION 21"   'shown on the title screen
+CONST FXEDGECHR = 177         'character of the line that leads the screen effects (176, 177, 178, 219; 0 = no line)
 
 'ApplyTheme:
 '  Fills the colour table.  Entries:
@@ -198,7 +207,7 @@ SUB ChangeSetting (sel, d)
         CASE 4
             startLevel = startLevel + d
             IF startLevel < 1 THEN startLevel = 1
-            IF startLevel > numLevels THEN startLevel = numLevels
+            IF startLevel > LevelLimit THEN startLevel = LevelLimit
         CASE 5
             theme = theme + d
             IF theme > 5 THEN theme = 1
@@ -297,7 +306,7 @@ SUB Dialog (t1$, t2$, hint$)
         FOR m = 1 TO MAXFIX                     'the new arena shows all mines again
             fxGone(m) = FALSE
         NEXT m
-        RedrawRows 2, 25
+        RevealArena
     ELSE
         RedrawRows 7, 13
     END IF
@@ -393,6 +402,7 @@ SUB DrawMenuRow (i, sel)
             IF speedUp THEN v$ = "ON" ELSE v$ = "OFF"
         CASE 4
             v$ = LTRIM$(STR$(startLevel))
+            IF LevelLimit < numLevels THEN v$ = v$ + "  (" + LTRIM$(STR$(LevelLimit)) + " open)"
         CASE 5
             SELECT CASE theme
                 CASE 1: v$ = "CLASSIC"
@@ -620,7 +630,7 @@ SUB Intro
     Center 12, "Steer your snake around the arena and collect all the eggs to", 7
     Center 13, "finish a level.  Every egg makes you longer and scores 100 points.", 7
     Center 14, "Catch the flashing star for a bonus and the heart for an extra life!", 7
-    Center 15, "From level 6 on, a flashing pill scores 250 points and shortens you.", 7
+    Center 15, "From level 6 on, a flashing pill shortens you, a potion makes you immune.", 7
     Center 16, "Avoid walls, the other snake, your own tail and the red mines.", 7
     Center 17, "From level 6 on, side doors open now and then - go through them!", 7
 
@@ -635,6 +645,19 @@ END SUB
 '  TRUE if colour c is a wall colour (plain or stone)
 FUNCTION IsWallColor (c)
     IsWallColor = (c = pal(3) OR c = pal(17) OR c = pal(18))
+END FUNCTION
+
+'LevelLimit:
+'  Highest level the Start level setting can choose (the unlocked levels)
+FUNCTION LevelLimit
+    IF unlockAll THEN
+        lim = numLevels
+    ELSE
+        lim = unlocked
+        IF lim > numLevels THEN lim = numLevels
+        IF lim < 1 THEN lim = 1
+    END IF
+    LevelLimit = lim                           'the name is only assigned (reading it would call the function again)
 END FUNCTION
 
 'Level:
@@ -742,7 +765,7 @@ SUB Level (what)
     PrepareHeart                                 'places of the heart, near the corners
     PrepareDoors                                 'door rows (one of them is used in the game)
     PrepareMines                                 'places for the random mines
-    IF NOT deferDraw THEN RedrawRows 2, 25
+    IF NOT deferDraw THEN RevealArena
 END SUB
 
 'MainMenu:
@@ -756,8 +779,13 @@ FUNCTION MainMenu
         DO
             k$ = INKEY$
         LOOP WHILE k$ = ""
+        IF CheatKey(k$) THEN k$ = ""             'hidden switches (Ctrl+Z, then a letter)
         old = sel
         full = FALSE
+        IF startLevel > LevelLimit THEN               'the switch was turned off: that level is locked again
+            startLevel = LevelLimit
+            full = TRUE
+        END IF
         SELECT CASE k$
             CASE CHR$(0) + "H"
                 sel = sel - 1
@@ -858,18 +886,97 @@ SUB ShowScores
     LOOP WHILE INKEY$ = ""
 END SUB
 
+'FxLine:
+'  One line of the screen effect: a column (byRow = FALSE) or a text row of
+'  the playfield.  show = TRUE draws the arena there, FALSE wipes it.
+SUB FxLine (byRow, k, show)
+    IF byRow THEN
+        IF show THEN
+            FOR c = 1 TO 80
+                DrawCell k, c
+            NEXT c
+        ELSE
+            FillRect k, 1, k, 80, 32, pal(4) * 16 + 7
+        END IF
+    ELSE
+        IF show THEN
+            FOR r = 2 TO 25
+                DrawCell r, k
+            NEXT r
+        ELSE
+            FillRect 2, k, 25, k, 32, pal(4) * 16 + 7
+        END IF
+    END IF
+END SUB
+
+'FxEdge:
+'  The leading line of shade characters (nothing if it is off the playfield)
+SUB FxEdge (byRow, k)
+    IF FXEDGECHR = 0 THEN EXIT SUB
+    IF byRow THEN
+        IF k >= 2 AND k <= 25 THEN FillRect k, 1, k, 80, FXEDGECHR, pal(4) * 16 + 8
+    ELSE
+        IF k >= 1 AND k <= 80 THEN FillRect 2, k, 25, k, FXEDGECHR, pal(4) * 16 + 8
+    END IF
+END SUB
+
+'ScreenFx:
+'  Wipes the playfield (text rows 2 to 25) off the screen (show = FALSE) or
+'  shows a newly built arena (show = TRUE).  One of four effects, picked at
+'  random: a sweep from the left or the right edge, a curtain that opens
+'  from the middle column, a sweep from the top or the bottom, a curtain
+'  that opens from the middle row.  A line of shade characters leads the
+'  way.  It takes less than a second.  The shown arena is drawn once more at
+'  the end, which also puts the eggs and mines on it.
+SUB ScreenFx (show)
+    style = INT(RND * 4) + 1
+    byRow = (style >= 3)
+    IF byRow THEN lo = 2: hi = 25: dly = 35 ELSE lo = 1: hi = 80: dly = 10
+    n = hi - lo + 1
+    IF style = 1 OR style = 3 THEN
+        IF INT(RND * 2) = 0 THEN d = 1: s0 = lo ELSE d = -1: s0 = hi
+        FOR i = 0 TO n - 1
+            FxLine byRow, s0 + d * i, show
+            FxEdge byRow, s0 + d * (i + 1)
+            DelayMs dly
+        NEXT i
+    ELSE
+        mc = (lo + hi) \ 2
+        FOR i = 0 TO n \ 2 - 1
+            FxLine byRow, mc - i, show
+            FxLine byRow, mc + 1 + i, show
+            FxEdge byRow, mc - i - 1
+            FxEdge byRow, mc + 2 + i
+            DelayMs dly * 2
+        NEXT i
+    END IF
+    IF show THEN RedrawRows 2, 25
+END SUB
+
+'WipeScreen:
+'  Wipes the finished arena off the screen (level complete)
+SUB WipeScreen
+    ScreenFx FALSE
+END SUB
+
+'RevealArena:
+'  Shows a newly built arena
+SUB RevealArena
+    ScreenFx TRUE
+END SUB
+
 'ShowWait:
 '  Message while a level is built (it takes a moment)
 SUB ShowWait
-    attr = pal(5) + pal(6) * 16
-    DrawBox 10, 22, 14, 59, attr
+    attr = 15 + 5 * 16                         'white on magenta: unlike every message box
+    DrawBox 10, 22, 13, 59, attr
     Center 11, "PLEASE WAIT", attr
     Center 12, "preparing the arena...", attr
 END SUB
 
 'SparklePause:
 '  Title screen animation until a key is pressed: the game pieces (egg,
-'  star, mine, heart, pill) travel clockwise around the screen edge, every
+'  star, mine, heart, pill, potion) travel clockwise around the screen edge, every
 '  second piece is dark and they take turns blinking.  The logo cycles its
 '  colours.
 SUB SparklePause
@@ -915,12 +1022,13 @@ SUB SparklePause
         'draw them at their new places
         FOR i = 1 TO NB
             p = ((i - 1) * (252 \ NB) + ph) MOD 252
-            SELECT CASE (i - 1) MOD 5
+            SELECT CASE (i - 1) MOD 6
                 CASE 0: ch = eggChr: fc = 15
                 CASE 1: ch = 4: fc = 10
                 CASE 2: ch = MINECHAR: fc = 12
                 CASE 3: ch = 3: fc = 12
-                CASE ELSE: ch = 5: fc = 11
+                CASE 4: ch = 5: fc = 11
+                CASE ELSE: ch = 6: fc = 13
             END SELECT
             IF ((i + ph \ 2) AND 1) = 0 THEN fc = 8
             BorderPos p, r, c
@@ -934,7 +1042,7 @@ SUB SparklePause
             Center 22, "Press any key to continue", 8
         END IF
         ph = ph + 1
-        IF ph >= 1260 THEN ph = 0               'all cycles (5, 4, 252) fit into 1260
+        IF ph >= 1260 THEN ph = 0               'all cycles (6, 4, 252) fit into 1260
         FOR sl = 1 TO 4                           'the music is checked every 20 ms
             IF soundOn AND tp <= 20 THEN
                 IF PLAY(0) = 0 THEN
